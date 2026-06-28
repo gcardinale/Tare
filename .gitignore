@@ -1,0 +1,120 @@
+# ──────────────────────────────────────────────────────────────────────
+# Tare — .gitignore
+# Repository PUBBLICO. Niente di personale, locale o segreto deve uscire.
+# Regola d'oro: in caso di dubbio, IGNORA. Si aggiunge una eccezione (!)
+# solo per file che vuoi esplicitamente pubblicare.
+# ──────────────────────────────────────────────────────────────────────
+
+# ── Segreti, configurazione utente & stato runtime (MAI pubblicare) ────
+# La config e il ledger reali vivono in ~/.tare (fuori dal repo); qui
+# ignoriamo anche eventuali copie locali finite nel working tree.
+.tare/
+**/.tare/
+tare.config.json
+tare.config.jsonc
+config.local.*
+*.local.json
+*.local.jsonc
+ledger.json
+*.ledger.json
+
+# Variabili d'ambiente / credenziali / chiavi
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.keystore
+secrets/
+**/secret*.*
+*credential*
+*api*key*
+.netrc
+
+# Log (possono contenere i tuoi prompt, il tuo codice, conteggi token)
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Node / TypeScript: build & dipendenze ─────────────────────────────
+node_modules/
+dist/
+build/
+out/
+lib/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.eslintcache
+.cache/
+.turbo/
+.parcel-cache/
+
+# Package manager noise
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+
+# ── Asset AI locali / fixture private (NON spedire i tuoi dati) ────────
+models/
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+fixtures/private/
+samples/private/
+scratch/
+tmp/
+temp/
+*.tmp
+
+# ── Editor / IDE ──────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.iml
+.vs/
+*.swp
+*.swo
+*~
+
+# ── Spazzatura del sistema operativo ──────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Claude Code: TUTTO locale, niente nel repo pubblico ───────────────
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+.mcp.local.json
+
+# ── Schema di logica / pianificazione privata — NON pubblicare ────────
+# Contesto, decisioni, piani e task-tracking restano solo sulla tua macchina.
+ai/
+features/
+PLAN.md
+docs/private/
+
+# ── Vault personale / contesto privato — non deve MAI essere committato ─
+genio_brain/
+**/genio_brain/
+**/Profilo - *.md
