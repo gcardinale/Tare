@@ -113,6 +113,7 @@ ai/
 features/
 PLAN.md
 docs/private/
+docs/audits/
 
 # ── Vault personale / contesto privato — non deve MAI essere committato ─
 genio_brain/

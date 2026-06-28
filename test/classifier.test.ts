@@ -105,6 +105,41 @@ describe("classify — confidenza", () => {
   });
 });
 
+describe("classify — confini di parola (regressione F-03)", () => {
+  it('"prefix" non deve attivare il termine agentico "fix"', () => {
+    const c = classify({ task: "add a prefix to every line" });
+    expect(c.mode).toBe("single_pass");
+  });
+
+  it('"preview" non deve attivare il termine "review"', () => {
+    // Resta single_pass, ma NON perché ha matchato "review" per sottostringa.
+    const c = classify({ task: "generate a preview of the page" });
+    expect(c.mode).toBe("single_pass");
+  });
+
+  it("i termini accentati italiani matchano comunque (perché)", () => {
+    const c = classify({ task: "perché questo test non funziona" });
+    expect(c.mode).toBe("agentic");
+  });
+
+  it('i termini multi-parola matchano ("più file")', () => {
+    const c = classify({ task: "aggiorna lo stesso valore in più file" });
+    expect(c.mode).toBe("agentic");
+  });
+});
+
+describe("classify — banda agentica con contesto assente (regressione F-04)", () => {
+  it("contextTokens: 0 non deve produrre una banda [0, 0]", () => {
+    const c = classify({
+      task: "debug and refactor this across multiple files",
+      contextTokens: 0,
+      toolsAvailable: ["edit", "bash"],
+    });
+    expect(c.mode).toBe("agentic");
+    expect(c.tokenBand[1]).toBeGreaterThan(0);
+  });
+});
+
 describe("classify — determinismo", () => {
   it("stesso input → stesso output", () => {
     const input = { task: "fix the failing test", contextTokens: 6000, toolsAvailable: ["edit"] };

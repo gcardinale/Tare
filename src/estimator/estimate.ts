@@ -51,7 +51,9 @@ export function estimate(c: Classification, model: ModelConfig): CostRange {
     const cost = (total: number): number => {
       const input = total * (1 - ratio);
       const output = total * ratio;
-      return (input / 1e6) * model.pricePerMillionInput + (output / 1e6) * model.pricePerMillionOutput;
+      return (
+        (input / 1e6) * model.pricePerMillionInput + (output / 1e6) * model.pricePerMillionOutput
+      );
     };
     return {
       low: round(cost(bandLow), 4),

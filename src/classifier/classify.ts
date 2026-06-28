@@ -94,11 +94,22 @@ const ACTION_TOOLS: readonly string[] = [
   "exec",
 ];
 
-/** Conta quante voci della lista compaiono nel testo (max 1 per voce). */
+/** Mette in escape i metacaratteri regex di un termine. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Conta quante voci della lista compaiono nel testo come PAROLA intera (max 1 per
+ * voce). Il confine è unicode-aware: niente `\b` ASCII, che mancherebbe i termini
+ * accentati italiani (`perché`, `più file`). Evita falsi positivi tipo
+ * `prefix` → `fix` o `preview` → `review` (F-03 dell'audit 28/06).
+ */
 function countMatches(haystack: string, terms: readonly string[]): number {
   let n = 0;
   for (const t of terms) {
-    if (haystack.includes(t)) n += 1;
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, "iu");
+    if (re.test(haystack)) n += 1;
   }
   return n;
 }
@@ -165,8 +176,11 @@ function estimateTokenBand(
     const high = Math.round(contextTokens + 4000);
     return [low, high];
   }
-  // Snowball sublineare: ~ contextTokens * (1 + steps * fattore).
-  const low = Math.round(contextTokens * (1 + steps * 0.4));
-  const high = Math.round(contextTokens * (1 + steps * 0.9));
+  // Snowball sublineare: ~ contextTokens * (1 + steps * fattore). Floor sul
+  // contesto: anche senza contesto un loop agentico genera/legge token, quindi
+  // la banda non deve mai collassare a [0,0] (F-04 dell'audit 28/06).
+  const ctx = Math.max(contextTokens, 300);
+  const low = Math.round(ctx * (1 + steps * 0.4));
+  const high = Math.round(ctx * (1 + steps * 0.9));
   return [low, high];
 }

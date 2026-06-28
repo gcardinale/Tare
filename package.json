@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "gcardinale",
   "bin": {
-    "tare": "dist/cli/index.js"
+    "tare": "dist/index.js"
   },
   "engines": {
     "node": ">=20"
@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -30,12 +31,15 @@
     "jsonc-parser": "^3.3.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^9.17.0",
     "prettier": "^3.4.2",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
     "vitest": "^2.1.8"
   }
 }

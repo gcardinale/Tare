@@ -3,30 +3,31 @@
 **[🇬🇧 English](#english) · [🇮🇹 Italiano](#italiano)**
 
 > Status: design spec / pre-alpha. This README is the build brief.
-> Working name — the *tare* is the empty weight a scale measures before you load anything onto it. That's what this tool does: it weighs the cost of a task before you commit to it.
+> Working name — the _tare_ is the empty weight a scale measures before you load anything onto it. That's what this tool does: it weighs the cost of a task before you commit to it.
 
 ---
 
 <a id="english"></a>
+
 ## 🇬🇧 English
 
 **Know what a task costs before you run it.**
-Budget-aware preflight for AI coding agents — it decides *single-pass vs. agentic*, estimates token & quota cost across your models, and routes the task within budget *before* execution begins.
+Budget-aware preflight for AI coding agents — it decides _single-pass vs. agentic_, estimates token & quota cost across your models, and routes the task within budget _before_ execution begins.
 
 ### In plain terms
 
-If you use more than one AI model to keep your costs down, you're constantly making two judgment calls in your head before every task: *how much work does this actually need?* and *which budget should pay for it?* Get either wrong and you waste money or burn through a quota you were saving.
+If you use more than one AI model to keep your costs down, you're constantly making two judgment calls in your head before every task: _how much work does this actually need?_ and _which budget should pay for it?_ Get either wrong and you waste money or burn through a quota you were saving.
 
 Tare makes those two calls for you, automatically, **before the task runs** — and shows you the estimated price so you can approve it or change your mind. Think of it as a pre-flight checklist for your AI spending: a quick check that happens before takeoff, not a bill you read after landing.
 
 ### TL;DR
 
-Today's multi-model setups route **reactively**: they pick a model by the *type* of request and only react *after* you've already hit a wall. Tare adds the missing step — a **preflight** that, before a task runs:
+Today's multi-model setups route **reactively**: they pick a model by the _type_ of request and only react _after_ you've already hit a wall. Tare adds the missing step — a **preflight** that, before a task runs:
 
 1. **Classifies** how heavy the task is, using a free judge that runs on your own machine.
 2. **Decides the execution mode** — does this need a full step-by-step agentic loop, or is a single pass enough?
 3. **Estimates** the token and quota cost on each of your models.
-4. **Routes within budget** and shows you the number *before* you spend it.
+4. **Routes within budget** and shows you the number _before_ you spend it.
 
 One screen, one decision, then it runs. That's the whole product.
 
@@ -44,7 +45,7 @@ If you run several models to control cost, you already do this math in your head
 
 A 12% slice of a weekly quota, a 0.4% dent in a subscription cap, and three cents of metered credit can't be compared by raw token count. They cost you different things. Deciding which one should pay for a given task — while keeping enough headroom in each — is exactly the kind of bookkeeping nobody wants to do by hand.
 
-Existing routers don't help with either problem. They translate request formats, pick a model by category (`default` / `background` / `think` / `longContext`), and fall back when a provider errors out. None of them **predict** the cost, and none of them choose the **execution mode**. You find out you overspent *after* the fact.
+Existing routers don't help with either problem. They translate request formats, pick a model by category (`default` / `background` / `think` / `longContext`), and fall back when a provider errors out. None of them **predict** the cost, and none of them choose the **execution mode**. You find out you overspent _after_ the fact.
 
 Tare is the check that runs first.
 
@@ -80,16 +81,16 @@ The key moment is the second box: you see the price tag **before** you pay it. A
 
 ### A concrete walkthrough
 
-You ask your coding agent: *"find why the checkout test is failing and fix it."*
+You ask your coding agent: _"find why the checkout test is failing and fix it."_
 
 Before anything runs, Tare's preflight kicks in:
 
 - **Classify** — this is open-ended debugging across files you haven't named. The local judge tags it `agentic`, roughly 6–9 steps, token band 30k–55k, confidence 0.6.
 - **Estimate** — on your tiered "Lite" model that band is ~10–14% of your remaining weekly quota; on your metered model it's ~$0.02–0.04; your Opus-class plan has only 18% of its weekly cap left.
 - **Decide** — your policy says keep the Opus-class cap above 20% headroom, so it's off the table this week. The Lite model has room but this would eat a big slice; the metered model is cheap and has no ceiling.
-- **Preflight** — Tare shows you: *"Agentic debug, ~40k tokens. Lite model: ~12% of weekly quota. Suggested: metered model, ~$0.03. [Run suggested] [Use Lite] [Override]."*
+- **Preflight** — Tare shows you: _"Agentic debug, ~40k tokens. Lite model: ~12% of weekly quota. Suggested: metered model, ~$0.03. [Run suggested] [Use Lite] [Override]."_
 
-You hit **Run suggested**. The task runs on the metered model. Afterwards Tare records what it *actually* cost (say 36k tokens / $0.028) and tightens its next estimate.
+You hit **Run suggested**. The task runs on the metered model. Afterwards Tare records what it _actually_ cost (say 36k tokens / $0.028) and tightens its next estimate.
 
 Without Tare, you'd have found out about the quota hit only after it happened — or burned the Opus headroom you were deliberately saving for harder architecture work later in the week.
 
@@ -120,8 +121,9 @@ Tare sits in the same place a router would — either as a **local proxy** on a 
 Five small components. There's no framework here — each piece does exactly one job, and you could explain any of them in a sentence.
 
 **1. Interceptor — the part that catches the task.** It sits between your coding agent and the models, so it can see a task before it runs. Two shapes:
-- *Proxy mode* — opens a loopback port (e.g. `127.0.0.1:3210`), speaks the standard Anthropic Messages / OpenAI-compatible format, and forwards to whichever model is chosen. This is the same integration pattern routers already use, so any tool that lets you set a custom base URL just works.
-- *Hook / MCP mode* — registers a step the agent runs before starting a task, which returns the routing decision and the estimate.
+
+- _Proxy mode_ — opens a loopback port (e.g. `127.0.0.1:3210`), speaks the standard Anthropic Messages / OpenAI-compatible format, and forwards to whichever model is chosen. This is the same integration pattern routers already use, so any tool that lets you set a custom base URL just works.
+- _Hook / MCP mode_ — registers a step the agent runs before starting a task, which returns the routing decision and the estimate.
 
 **2. Classifier — the part that sizes the task.** A lightweight judge that reads the task and answers: how complex is it, single-pass or agentic, roughly how many steps, and roughly how many tokens. It runs **on your own machine and for free** — ideally on a small local model you already serve (via Ollama, llama.cpp, or any local GGUF endpoint). This is deliberate: a tool whose job is to save you money can't itself cost money — or send your code to a third party — every time it makes a decision. It starts with simple, transparent rules and gets sharper as it learns from your own session history.
 
@@ -139,26 +141,27 @@ Five small components. There's no framework here — each piece does exactly one
 ```jsonc
 {
   "models": {
-    "opus":     { "economy": "subscription_cap", "period": "weekly", "cap": 100, "used": 41 },
-    "glm-lite": { "economy": "tiered_quota",      "period": "weekly", "cap": 100, "used": 73 },
-    "deepseek": { "economy": "metered",           "currency": "USD",  "spent": 2.14 }
-  }
+    "opus": { "economy": "subscription_cap", "period": "weekly", "cap": 100, "used": 41 },
+    "glm-lite": { "economy": "tiered_quota", "period": "weekly", "cap": 100, "used": 73 },
+    "deepseek": { "economy": "metered", "currency": "USD", "spent": 2.14 },
+  },
 }
 ```
 
-It's updated after each run with what the task *actually* cost (read from the model's own usage reporting where available), so the budget picture stays honest and the estimates keep improving.
+It's updated after each run with what the task _actually_ cost (read from the model's own usage reporting where available), so the budget picture stays honest and the estimates keep improving.
 
-**5. Router — the part that makes the call.** Given the cost ranges, the current budget, and a small set of rules you control, it picks the **model + mode** that fits, and produces the preflight screen. The rules are plain and editable, for example: *"keep the Opus cap above 20% headroom for the week," "prefer single-pass under 15k tokens," "don't spend metered money while a capped model still has room."*
+**5. Router — the part that makes the call.** Given the cost ranges, the current budget, and a small set of rules you control, it picks the **model + mode** that fits, and produces the preflight screen. The rules are plain and editable, for example: _"keep the Opus cap above 20% headroom for the week," "prefer single-pass under 15k tokens," "don't spend metered money while a capped model still has room."_
 
 ### The two decisions, in detail
 
-**Execution mode: single-pass vs. agentic.** This is the axis existing routers ignore entirely — they only ask *what type* of request this is, never *how much machinery it needs*.
-- *Single-pass* is bounded, well-specified work: a focused edit, a code review, a critique, a translation, a docstring pass. One request, no loop — cheap and predictable.
-- *Agentic* is open-ended, exploratory work: a refactor spanning several files, debugging a failure you can't yet locate, scaffolding a new feature. The agent reads, plans, edits and re-checks in a loop, and because the context grows with every step, this is where quota quietly disappears.
+**Execution mode: single-pass vs. agentic.** This is the axis existing routers ignore entirely — they only ask _what type_ of request this is, never _how much machinery it needs_.
 
-Routing the wrong task into the wrong mode is the single biggest source of wasted spend. Tare's job is to call it *before* the loop starts.
+- _Single-pass_ is bounded, well-specified work: a focused edit, a code review, a critique, a translation, a docstring pass. One request, no loop — cheap and predictable.
+- _Agentic_ is open-ended, exploratory work: a refactor spanning several files, debugging a failure you can't yet locate, scaffolding a new feature. The agent reads, plans, edits and re-checks in a loop, and because the context grows with every step, this is where quota quietly disappears.
 
-**Budget: route across three economies.** As described above, the three kinds of budget aren't comparable by token count — they're comparable by *what they cost you in remaining headroom*. The ledger normalizes them onto the same scale, so the router can reason about which budget can absorb a given task most cheaply right now, while respecting the headroom rules you've set.
+Routing the wrong task into the wrong mode is the single biggest source of wasted spend. Tare's job is to call it _before_ the loop starts.
+
+**Budget: route across three economies.** As described above, the three kinds of budget aren't comparable by token count — they're comparable by _what they cost you in remaining headroom_. The ledger normalizes them onto the same scale, so the router can reason about which budget can absorb a given task most cheaply right now, while respecting the headroom rules you've set.
 
 ### Estimation honesty
 
@@ -192,42 +195,42 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
 // ~/.tare/config.jsonc
 {
   "classifier": {
-    "backend": "local",            // local GGUF judge. free, private, runs on your machine.
+    "backend": "local", // local GGUF judge. free, private, runs on your machine.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
-    "calibrate_from": "~/.tare/logs"
+    "calibrate_from": "~/.tare/logs",
   },
   "models": {
-    "opus":     { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
-    "glm-lite": { "economy": "tiered_quota",      "base_url": "…", "weekly_cap": 100 },
-    "deepseek": { "economy": "metered",           "base_url": "…", "price_in": 0.27, "price_out": 0.41 }
+    "opus": { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
+    "glm-lite": { "economy": "tiered_quota", "base_url": "…", "weekly_cap": 100 },
+    "deepseek": { "economy": "metered", "base_url": "…", "price_in": 0.27, "price_out": 0.41 },
   },
   "policy": {
     "single_pass_below_tokens": 15000,
     "opus_min_headroom_pct": 20,
     "prefer_capped_over_metered": true,
-    "auto_pass_cost_below": { "metered_usd": 0.01 }
+    "auto_pass_cost_below": { "metered_usd": 0.01 },
   },
   "preflight": {
     "always_prompt_when": ["agentic", "metered_spend", "tight_budget"],
-    "auto_pass_when": ["single_pass", "cheap"]
-  }
+    "auto_pass_when": ["single_pass", "cheap"],
+  },
 }
 ```
 
-### What Tare is *not* (and how it differs)
+### What Tare is _not_ (and how it differs)
 
-| | Existing routers | **Tare** |
-|---|---|---|
-| Picks a model by request type | ✅ | ✅ |
-| Falls back when a provider errors | ✅ | ✅ |
-| **Predicts the cost before running** | ❌ | ✅ |
-| **Decides single-pass vs. agentic** | ❌ | ✅ |
+|                                          | Existing routers    | **Tare**                 |
+| ---------------------------------------- | ------------------- | ------------------------ |
+| Picks a model by request type            | ✅                  | ✅                       |
+| Falls back when a provider errors        | ✅                  | ✅                       |
+| **Predicts the cost before running**     | ❌                  | ✅                       |
+| **Decides single-pass vs. agentic**      | ❌                  | ✅                       |
 | **Tracks budget across mixed economies** | partial usage stats | ✅ one normalized ledger |
-| **Shows you the price before you pay** | ❌ | ✅ |
-| Free local classifier | ❌ | ✅ |
-| Learns from your own history | ❌ | ✅ |
+| **Shows you the price before you pay**   | ❌                  | ✅                       |
+| Free local classifier                    | ❌                  | ✅                       |
+| Learns from your own history             | ❌                  | ✅                       |
 
-Tare is **not** a gateway, not a credentials manager, and not a way to use a coding agent without an account. It's a preflight. If a router already moves your requests around, Tare sits one layer above it and decides *whether and how* to spend before the router ever sees the request. The two work together.
+Tare is **not** a gateway, not a credentials manager, and not a way to use a coding agent without an account. It's a preflight. If a router already moves your requests around, Tare sits one layer above it and decides _whether and how_ to spend before the router ever sees the request. The two work together.
 
 ### Roadmap
 
@@ -241,7 +244,7 @@ The discipline is to ship an MVP that does one thing completely, and earn every 
 
 ### FAQ
 
-**Isn't this just a duplicate of the router I already use?** No. Routers decide *which model* and react *after* you've spent. Tare decides *whether and how* to spend, *before*. Run both — router underneath, Tare on top.
+**Isn't this just a duplicate of the router I already use?** No. Routers decide _which model_ and react _after_ you've spent. Tare decides _whether and how_ to spend, _before_. Run both — router underneath, Tare on top.
 
 **How can it estimate agentic cost if it can't know how many steps there'll be?** It can't exactly, so it doesn't pretend to. It gives a calibrated range with a confidence level, and that range tightens as it learns from your runs.
 
@@ -260,25 +263,26 @@ MIT (proposed).
 ---
 
 <a id="italiano"></a>
+
 ## 🇮🇹 Italiano
 
 **Sai quanto costa un task prima di lanciarlo.**
-Preflight budget-aware per agenti di coding AI — decide *passata singola vs. agentico*, stima il costo in token e quota sui tuoi modelli, e instrada il task entro il budget *prima* che l'esecuzione cominci.
+Preflight budget-aware per agenti di coding AI — decide _passata singola vs. agentico_, stima il costo in token e quota sui tuoi modelli, e instrada il task entro il budget _prima_ che l'esecuzione cominci.
 
 ### In parole semplici
 
-Se usi più di un modello AI per tenere bassi i costi, prima di ogni task fai di continuo due valutazioni a mente: *quanto lavoro serve davvero?* e *quale budget deve pagarlo?* Sbagliarne una significa sprecare soldi o consumare una quota che stavi tenendo da parte.
+Se usi più di un modello AI per tenere bassi i costi, prima di ogni task fai di continuo due valutazioni a mente: _quanto lavoro serve davvero?_ e _quale budget deve pagarlo?_ Sbagliarne una significa sprecare soldi o consumare una quota che stavi tenendo da parte.
 
 Tare prende quelle due decisioni al posto tuo, in automatico, **prima che il task parta** — e ti mostra il prezzo stimato così puoi approvarlo o cambiare idea. Pensalo come una checklist pre-volo per la tua spesa AI: un controllo veloce che avviene prima del decollo, non un conto che leggi dopo l'atterraggio.
 
 ### In due righe
 
-I setup multi-modello di oggi instradano in modo **reattivo**: scelgono il modello in base al *tipo* di richiesta e reagiscono solo *dopo* aver già sbattuto contro il muro. Tare aggiunge il passaggio mancante — un **preflight** che, prima che un task parta:
+I setup multi-modello di oggi instradano in modo **reattivo**: scelgono il modello in base al _tipo_ di richiesta e reagiscono solo _dopo_ aver già sbattuto contro il muro. Tare aggiunge il passaggio mancante — un **preflight** che, prima che un task parta:
 
 1. **Classifica** quanto è pesante il task, con un giudice gratuito che gira sulla tua macchina.
 2. **Decide la modalità di esecuzione** — serve un loop agentico passo-passo o basta una passata singola?
 3. **Stima** il costo in token e quota su ciascuno dei tuoi modelli.
-4. **Instrada entro il budget** e ti mostra il numero *prima* che tu lo spenda.
+4. **Instrada entro il budget** e ti mostra il numero _prima_ che tu lo spenda.
 
 Una schermata, una decisione, poi parte. È tutto qui il prodotto.
 
@@ -296,7 +300,7 @@ Se usi diversi modelli per controllare i costi, questo calcolo lo fai già a men
 
 Un 12% di una quota settimanale, uno 0,4% intaccato su un cap di abbonamento e tre centesimi di credito a consumo non si possono confrontare per numero grezzo di token. Ti costano cose diverse. Decidere quale dei tre deve pagare un certo task — mantenendo abbastanza margine in ciascuno — è esattamente il tipo di contabilità che nessuno vuole fare a mano.
 
-I router esistenti non aiutano in nessuno dei due problemi. Traducono i formati delle richieste, scelgono il modello per categoria (`default` / `background` / `think` / `longContext`) e fanno fallback quando un provider dà errore. Nessuno **predice** il costo, e nessuno sceglie la **modalità di esecuzione**. Scopri di aver speso troppo *a cose fatte*.
+I router esistenti non aiutano in nessuno dei due problemi. Traducono i formati delle richieste, scelgono il modello per categoria (`default` / `background` / `think` / `longContext`) e fanno fallback quando un provider dà errore. Nessuno **predice** il costo, e nessuno sceglie la **modalità di esecuzione**. Scopri di aver speso troppo _a cose fatte_.
 
 Tare è il controllo che gira per primo.
 
@@ -332,16 +336,16 @@ Il momento chiave è il secondo riquadro: vedi il prezzo **prima** di pagarlo. D
 
 ### Un esempio concreto
 
-Chiedi al tuo agente di coding: *"trova perché il test del checkout fallisce e correggilo".*
+Chiedi al tuo agente di coding: _"trova perché il test del checkout fallisce e correggilo"._
 
 Prima che parta qualsiasi cosa, scatta il preflight di Tare:
 
 - **Classifica** — è un debug aperto su file che non hai nominato. Il giudice locale lo etichetta `agentico`, circa 6–9 step, fascia di token 30k–55k, confidenza 0,6.
 - **Stima** — sul tuo modello "Lite" a scaglioni quella fascia è ~10–14% della quota settimanale residua; sul modello a consumo è ~$0,02–0,04; il tuo piano di classe Opus ha solo il 18% di cap settimanale rimasto.
 - **Decide** — la tua policy dice di tenere il cap Opus sopra il 20% di margine, quindi questa settimana è fuori gioco. Il modello Lite ha spazio ma questo task ne mangerebbe una bella fetta; il modello a consumo è economico e senza tetto.
-- **Preflight** — Tare ti mostra: *"Debug agentico, ~40k token. Modello Lite: ~12% della quota settimanale. Suggerito: modello a consumo, ~$0,03. [Esegui suggerito] [Usa Lite] [Modifica]."*
+- **Preflight** — Tare ti mostra: _"Debug agentico, ~40k token. Modello Lite: ~12% della quota settimanale. Suggerito: modello a consumo, ~$0,03. [Esegui suggerito] [Usa Lite] [Modifica]."_
 
-Premi **Esegui suggerito**. Il task gira sul modello a consumo. Dopo, Tare registra quanto è costato *davvero* (diciamo 36k token / $0,028) e stringe la stima successiva.
+Premi **Esegui suggerito**. Il task gira sul modello a consumo. Dopo, Tare registra quanto è costato _davvero_ (diciamo 36k token / $0,028) e stringe la stima successiva.
 
 Senza Tare, avresti scoperto il colpo alla quota solo dopo che era successo — o avresti bruciato il margine di Opus che stavi tenendo apposta per il lavoro di architettura più difficile più avanti nella settimana.
 
@@ -372,8 +376,9 @@ Tare sta nello stesso punto in cui starebbe un router — o come **proxy locale*
 Cinque componenti piccoli. Qui non c'è nessun framework — ogni pezzo fa esattamente un lavoro, e potresti spiegare ognuno in una frase.
 
 **1. Interceptor — il pezzo che intercetta il task.** Sta tra il tuo agente di coding e i modelli, così può vedere un task prima che venga eseguito. Due forme:
-- *Modalità proxy* — apre una porta di loopback (es. `127.0.0.1:3210`), parla lo standard Anthropic Messages / OpenAI-compatible, e inoltra al modello scelto. È lo stesso schema d'integrazione che i router già usano, quindi qualsiasi strumento che ti permette di impostare una base URL personalizzata funziona da subito.
-- *Modalità hook / MCP* — registra un passaggio che l'agente esegue prima di iniziare un task, che restituisce la decisione di routing e la stima.
+
+- _Modalità proxy_ — apre una porta di loopback (es. `127.0.0.1:3210`), parla lo standard Anthropic Messages / OpenAI-compatible, e inoltra al modello scelto. È lo stesso schema d'integrazione che i router già usano, quindi qualsiasi strumento che ti permette di impostare una base URL personalizzata funziona da subito.
+- _Modalità hook / MCP_ — registra un passaggio che l'agente esegue prima di iniziare un task, che restituisce la decisione di routing e la stima.
 
 **2. Classificatore — il pezzo che misura il task.** Un giudice leggero che legge il task e risponde: quanto è complesso, passata singola o agentico, all'incirca quanti step, e all'incirca quanti token. Gira **sulla tua macchina e gratis** — idealmente su un piccolo modello locale che già servi (via Ollama, llama.cpp, o un qualsiasi endpoint GGUF locale). È una scelta voluta: uno strumento il cui compito è farti risparmiare non può a sua volta costarti — o mandare il tuo codice a terzi — a ogni decisione. Parte da regole semplici e trasparenti e diventa più preciso man mano che impara dal tuo storico di sessioni.
 
@@ -391,26 +396,27 @@ Cinque componenti piccoli. Qui non c'è nessun framework — ogni pezzo fa esatt
 ```jsonc
 {
   "models": {
-    "opus":     { "economy": "subscription_cap", "period": "weekly", "cap": 100, "used": 41 },
-    "glm-lite": { "economy": "tiered_quota",      "period": "weekly", "cap": 100, "used": 73 },
-    "deepseek": { "economy": "metered",           "currency": "USD",  "spent": 2.14 }
-  }
+    "opus": { "economy": "subscription_cap", "period": "weekly", "cap": 100, "used": 41 },
+    "glm-lite": { "economy": "tiered_quota", "period": "weekly", "cap": 100, "used": 73 },
+    "deepseek": { "economy": "metered", "currency": "USD", "spent": 2.14 },
+  },
 }
 ```
 
-Viene aggiornato dopo ogni esecuzione con quanto il task è costato *davvero* (letto dal reporting di usage del modello, dove disponibile), così il quadro del budget resta onesto e le stime continuano a migliorare.
+Viene aggiornato dopo ogni esecuzione con quanto il task è costato _davvero_ (letto dal reporting di usage del modello, dove disponibile), così il quadro del budget resta onesto e le stime continuano a migliorare.
 
-**5. Router — il pezzo che prende la decisione.** Date le fasce di costo, il budget attuale e un piccolo insieme di regole che controlli tu, sceglie il **modello + modalità** che rientra, e produce la schermata di preflight. Le regole sono semplici e modificabili, per esempio: *"tieni il cap di Opus sopra il 20% di margine per la settimana", "preferisci la passata singola sotto i 15k token", "non spendere denaro a consumo finché un modello con cap ha ancora spazio".*
+**5. Router — il pezzo che prende la decisione.** Date le fasce di costo, il budget attuale e un piccolo insieme di regole che controlli tu, sceglie il **modello + modalità** che rientra, e produce la schermata di preflight. Le regole sono semplici e modificabili, per esempio: _"tieni il cap di Opus sopra il 20% di margine per la settimana", "preferisci la passata singola sotto i 15k token", "non spendere denaro a consumo finché un modello con cap ha ancora spazio"._
 
 ### Le due decisioni, nel dettaglio
 
-**Modalità di esecuzione: passata singola vs. agentico.** È l'asse che i router esistenti ignorano del tutto — chiedono solo *che tipo* di richiesta sia, mai *quanta macchina serva*.
-- *Passata singola* è lavoro delimitato e ben specificato: una modifica mirata, una review del codice, una critica, una traduzione, una passata sui docstring. Una richiesta, niente loop — economico e prevedibile.
-- *Agentico* è lavoro aperto ed esplorativo: un refactor su più file, il debug di un errore che non riesci ancora a localizzare, lo scaffolding di una nuova feature. L'agente legge, pianifica, modifica e ricontrolla in loop, e poiché il contesto cresce a ogni step, è qui che la quota sparisce in silenzio.
+**Modalità di esecuzione: passata singola vs. agentico.** È l'asse che i router esistenti ignorano del tutto — chiedono solo _che tipo_ di richiesta sia, mai _quanta macchina serva_.
 
-Mandare il task sbagliato nella modalità sbagliata è la prima fonte di spesa sprecata. Il compito di Tare è deciderlo *prima* che il loop parta.
+- _Passata singola_ è lavoro delimitato e ben specificato: una modifica mirata, una review del codice, una critica, una traduzione, una passata sui docstring. Una richiesta, niente loop — economico e prevedibile.
+- _Agentico_ è lavoro aperto ed esplorativo: un refactor su più file, il debug di un errore che non riesci ancora a localizzare, lo scaffolding di una nuova feature. L'agente legge, pianifica, modifica e ricontrolla in loop, e poiché il contesto cresce a ogni step, è qui che la quota sparisce in silenzio.
 
-**Budget: instradare fra tre economie.** Come detto sopra, i tre tipi di budget non sono confrontabili per numero di token — sono confrontabili per *quanto ti costano in margine residuo*. Il ledger li normalizza sulla stessa scala, così il router può ragionare su quale budget può assorbire un dato task nel modo più economico in quel momento, rispettando le regole di margine che hai impostato.
+Mandare il task sbagliato nella modalità sbagliata è la prima fonte di spesa sprecata. Il compito di Tare è deciderlo _prima_ che il loop parta.
+
+**Budget: instradare fra tre economie.** Come detto sopra, i tre tipi di budget non sono confrontabili per numero di token — sono confrontabili per _quanto ti costano in margine residuo_. Il ledger li normalizza sulla stessa scala, così il router può ragionare su quale budget può assorbire un dato task nel modo più economico in quel momento, rispettando le regole di margine che hai impostato.
 
 ### Onestà sulle stime
 
@@ -444,42 +450,42 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
 // ~/.tare/config.jsonc
 {
   "classifier": {
-    "backend": "local",            // giudice GGUF locale. gratuito, privato, gira sulla tua macchina.
+    "backend": "local", // giudice GGUF locale. gratuito, privato, gira sulla tua macchina.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
-    "calibrate_from": "~/.tare/logs"
+    "calibrate_from": "~/.tare/logs",
   },
   "models": {
-    "opus":     { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
-    "glm-lite": { "economy": "tiered_quota",      "base_url": "…", "weekly_cap": 100 },
-    "deepseek": { "economy": "metered",           "base_url": "…", "price_in": 0.27, "price_out": 0.41 }
+    "opus": { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
+    "glm-lite": { "economy": "tiered_quota", "base_url": "…", "weekly_cap": 100 },
+    "deepseek": { "economy": "metered", "base_url": "…", "price_in": 0.27, "price_out": 0.41 },
   },
   "policy": {
     "single_pass_below_tokens": 15000,
     "opus_min_headroom_pct": 20,
     "prefer_capped_over_metered": true,
-    "auto_pass_cost_below": { "metered_usd": 0.01 }
+    "auto_pass_cost_below": { "metered_usd": 0.01 },
   },
   "preflight": {
     "always_prompt_when": ["agentic", "metered_spend", "tight_budget"],
-    "auto_pass_when": ["single_pass", "cheap"]
-  }
+    "auto_pass_when": ["single_pass", "cheap"],
+  },
 }
 ```
 
-### Cosa Tare *non* è (e in cosa si distingue)
+### Cosa Tare _non_ è (e in cosa si distingue)
 
-| | Router esistenti | **Tare** |
-|---|---|---|
-| Sceglie il modello per tipo di richiesta | ✅ | ✅ |
-| Fa fallback all'errore del provider | ✅ | ✅ |
-| **Predice il costo prima di eseguire** | ❌ | ✅ |
-| **Decide passata singola vs. agentico** | ❌ | ✅ |
+|                                            | Router esistenti              | **Tare**                       |
+| ------------------------------------------ | ----------------------------- | ------------------------------ |
+| Sceglie il modello per tipo di richiesta   | ✅                            | ✅                             |
+| Fa fallback all'errore del provider        | ✅                            | ✅                             |
+| **Predice il costo prima di eseguire**     | ❌                            | ✅                             |
+| **Decide passata singola vs. agentico**    | ❌                            | ✅                             |
 | **Traccia il budget fra economie diverse** | statistiche di usage parziali | ✅ un solo ledger normalizzato |
-| **Ti mostra il prezzo prima di pagare** | ❌ | ✅ |
-| Classificatore locale gratuito | ❌ | ✅ |
-| Impara dal tuo storico | ❌ | ✅ |
+| **Ti mostra il prezzo prima di pagare**    | ❌                            | ✅                             |
+| Classificatore locale gratuito             | ❌                            | ✅                             |
+| Impara dal tuo storico                     | ❌                            | ✅                             |
 
-Tare **non** è un gateway, non è un gestore di credenziali, e non è un modo per usare un agente di coding senza account. È un preflight. Se un router muove già le tue richieste, Tare sta un livello sopra e decide *se e come* spendere prima ancora che il router veda la richiesta. I due lavorano insieme.
+Tare **non** è un gateway, non è un gestore di credenziali, e non è un modo per usare un agente di coding senza account. È un preflight. Se un router muove già le tue richieste, Tare sta un livello sopra e decide _se e come_ spendere prima ancora che il router veda la richiesta. I due lavorano insieme.
 
 ### Roadmap
 
@@ -493,7 +499,7 @@ La disciplina è rilasciare un MVP che fa una cosa sola in modo completo, e guad
 
 ### FAQ
 
-**Non è solo un doppione del router che già uso?** No. I router decidono *quale modello* e reagiscono *dopo* che hai speso. Tare decide *se e come* spendere, *prima*. Usali insieme — il router sotto, Tare sopra.
+**Non è solo un doppione del router che già uso?** No. I router decidono _quale modello_ e reagiscono _dopo_ che hai speso. Tare decide _se e come_ spendere, _prima_. Usali insieme — il router sotto, Tare sopra.
 
 **Come fa a stimare il costo agentico se non può sapere quanti step ci saranno?** Non può con esattezza, e infatti non finge. Dà una fascia calibrata con un livello di confidenza, e quella fascia si stringe man mano che impara dalle tue esecuzioni.
 
