@@ -85,6 +85,91 @@ describe("parseConfig — config valida", () => {
   });
 });
 
+describe("parseConfig — routing del proxy (M4)", () => {
+  const withModel = (def: string): string => `{ "models": { "x": ${def} }, ${POLICY} }`;
+
+  it("mappa baseUrl, apiKeyEnv e upstreamModel sul modello", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "subscription_cap", "period": "weekly", "tokenCapacity": 1, "baseUrl": "https://api.anthropic.com", "apiKeyEnv": "MY_KEY", "upstreamModel": "claude-opus-4" }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.models[0]).toMatchObject({
+        baseUrl: "https://api.anthropic.com",
+        apiKeyEnv: "MY_KEY",
+        upstreamModel: "claude-opus-4",
+      });
+    }
+  });
+
+  it("campi di routing assenti → modello senza quei campi", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2 }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const m = r.value.models[0]!;
+      expect(m).not.toHaveProperty("baseUrl");
+      expect(m).not.toHaveProperty("apiKeyEnv");
+      expect(m).not.toHaveProperty("upstreamModel");
+    }
+  });
+
+  it("baseUrl null trattato come assente", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "baseUrl": null }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.models[0]).not.toHaveProperty("baseUrl");
+  });
+
+  it("baseUrl non-URL → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2, "baseUrl": "non-un-url" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("baseUrl con protocollo non http(s) → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2, "baseUrl": "ftp://x/y" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("apiKeyEnv vuoto → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "apiKeyEnv": "  " }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("upstreamModel non stringa → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "upstreamModel": 5 }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+});
+
 describe("parseConfig — errori struttura", () => {
   it("JSONC malformato → err", () => {
     expect(parseConfig("{ models: ").ok).toBe(false);

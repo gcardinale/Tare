@@ -16,7 +16,14 @@
 
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 
-import type { ModelConfig, Period, Policy, Result, TareConfig } from "../types/index.js";
+import type {
+  ModelConfig,
+  ModelRouting,
+  Period,
+  Policy,
+  Result,
+  TareConfig,
+} from "../types/index.js";
 import { err, ok } from "../types/index.js";
 
 function isPlainObject(x: unknown): x is Record<string, unknown> {
@@ -26,9 +33,50 @@ function isPlainObject(x: unknown): x is Record<string, unknown> {
 const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const isPeriod = (x: unknown): x is Period => x === "weekly" || x === "monthly";
 
+const isHttpUrl = (x: string): boolean => {
+  try {
+    const u = new URL(x);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Estrae e valida i campi di routing del proxy (M4). Tutti opzionali: assenti →
+ * oggetto vuoto. Validazione forte come il resto del config: una `baseUrl`
+ * malformata è un errore esplicito, non un default silenzioso.
+ */
+function toRouting(name: string, def: Record<string, unknown>): Result<ModelRouting> {
+  const out: { baseUrl?: string; apiKeyEnv?: string; upstreamModel?: string } = {};
+  if (def.baseUrl !== undefined && def.baseUrl !== null) {
+    if (typeof def.baseUrl !== "string" || !isHttpUrl(def.baseUrl)) {
+      return err(`modello "${name}": "baseUrl" deve essere un URL http(s) valido`);
+    }
+    out.baseUrl = def.baseUrl;
+  }
+  if (def.apiKeyEnv !== undefined && def.apiKeyEnv !== null) {
+    if (typeof def.apiKeyEnv !== "string" || def.apiKeyEnv.trim() === "") {
+      return err(`modello "${name}": "apiKeyEnv" deve essere il nome (non vuoto) di una env var`);
+    }
+    out.apiKeyEnv = def.apiKeyEnv;
+  }
+  if (def.upstreamModel !== undefined && def.upstreamModel !== null) {
+    if (typeof def.upstreamModel !== "string" || def.upstreamModel.trim() === "") {
+      return err(`modello "${name}": "upstreamModel" deve essere una stringa non vuota`);
+    }
+    out.upstreamModel = def.upstreamModel;
+  }
+  return ok(out);
+}
+
 /** Normalizza una definizione di modello in un `ModelConfig` (col nome iniettato). */
 function toModel(name: string, def: unknown): Result<ModelConfig> {
   if (!isPlainObject(def)) return err(`modello "${name}": definizione non valida`);
+
+  const routing = toRouting(name, def);
+  if (!routing.ok) return routing;
+  const r = routing.value;
 
   if (def.economy === "metered") {
     if (typeof def.currency !== "string") return err(`modello "${name}": "currency" mancante`);
@@ -46,6 +94,7 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
       currency: def.currency,
       pricePerMillionInput: def.priceInPerMillion,
       pricePerMillionOutput: def.priceOutPerMillion,
+      ...r,
     });
   }
 
@@ -59,6 +108,7 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
       economy: def.economy,
       period: def.period,
       periodTokenCapacity: def.tokenCapacity,
+      ...r,
     });
   }
 
@@ -139,25 +189,36 @@ export function parseConfig(text: string): Result<TareConfig> {
 export const DEFAULT_CONFIG_JSONC = `{
   // Configurazione di Tare — ~/.tare/config.jsonc
   // I modelli che Tare può scegliere, ciascuno nella sua "economia".
+  // Campi di routing del proxy (M4), tutti opzionali:
+  //   baseUrl       endpoint upstream del modello (assente → default Anthropic)
+  //   apiKeyEnv     NOME della env var con la chiave (MAI la chiave qui dentro;
+  //                 assente → si inoltra l'header di auth in ingresso)
+  //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
   "models": {
     // Piano ad abbonamento con tetto periodico (es. Opus).
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
-      "tokenCapacity": 1000000 // token che esauriscono il 100% del periodo
+      "tokenCapacity": 1000000, // token che esauriscono il 100% del periodo
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
     },
     // Quota a livelli (es. modello "Lite").
     "lite": {
       "economy": "tiered_quota",
       "period": "weekly",
-      "tokenCapacity": 2000000
+      "tokenCapacity": 2000000,
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "LITE_API_KEY"
     },
     // Pagamento a consumo.
     "pay": {
       "economy": "metered",
       "currency": "USD",
       "priceInPerMillion": 0.27,
-      "priceOutPerMillion": 0.41
+      "priceOutPerMillion": 0.41,
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "PAY_API_KEY"
     }
   },
   // Le regole che controlli tu.

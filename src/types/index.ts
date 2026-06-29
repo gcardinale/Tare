@@ -87,27 +87,42 @@ export interface Ledger {
 export type Period = "weekly" | "monthly";
 
 /**
+ * Dati di instradamento del proxy (M4), comuni a ogni economia. Tutti opzionali:
+ * il nucleo puro non li usa, servono solo al bordo che inoltra la chiamata.
+ *  - `baseUrl`   endpoint upstream del modello (assente → default Anthropic).
+ *  - `apiKeyEnv` NOME della env var con la chiave (mai la chiave in chiaro nel
+ *                config); assente → si inoltra l'header di auth in ingresso.
+ *  - `upstreamModel` id del modello da mandare al provider (assente → si lascia
+ *                il `model` della richiesta originale).
+ */
+export interface ModelRouting {
+  readonly baseUrl?: string;
+  readonly apiKeyEnv?: string;
+  readonly upstreamModel?: string;
+}
+
+/**
  * Configurazione di un modello, una per economia. È ciò che serve all'estimator
  * per trasformare i token in costo nell'unità giusta.
  *
  * Per le economie a tetto/quota, `periodTokenCapacity` è il numero di token che
  * esaurisce il 100% del periodo: è il ponte tra "token" e "% di budget". Vedi
- * `ai/decisions.md → DEC-ESTIMATE-2`.
+ * `ai/decisions.md → DEC-ESTIMATE-2`. I campi di `ModelRouting` (M4) sono additivi.
  */
 export type ModelConfig =
-  | {
+  | ({
       readonly name: string;
       readonly economy: "subscription_cap";
       readonly period: Period;
       readonly periodTokenCapacity: number;
-    }
-  | {
+    } & ModelRouting)
+  | ({
       readonly name: string;
       readonly economy: "tiered_quota";
       readonly period: Period;
       readonly periodTokenCapacity: number;
-    }
-  | {
+    } & ModelRouting)
+  | ({
       readonly name: string;
       readonly economy: "metered";
       readonly currency: string;
@@ -115,7 +130,7 @@ export type ModelConfig =
       readonly pricePerMillionInput: number;
       /** Prezzo per 1.000.000 di token di output. */
       readonly pricePerMillionOutput: number;
-    };
+    } & ModelRouting);
 
 // ─── Estimator ───────────────────────────────────────────────────────────────
 

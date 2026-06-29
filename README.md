@@ -194,26 +194,33 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
 ```jsonc
 // ~/.tare/config.jsonc
 {
-  // Candidate models, one per economy. `base_url` is used by the proxy (M4).
+  // Candidate models, one per economy. The proxy routing fields are optional:
+  //   baseUrl       upstream endpoint (absent → Anthropic default)
+  //   apiKeyEnv     NAME of the env var holding the key (never the key itself;
+  //                 absent → the incoming auth header is forwarded)
+  //   upstreamModel model id to send to the provider (absent → the request's own)
   "models": {
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
       "tokenCapacity": 1000000,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
     },
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "GLM_LITE_API_KEY",
     },
     "deepseek": {
       "economy": "metered",
       "currency": "USD",
       "priceInPerMillion": 0.27,
       "priceOutPerMillion": 0.41,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
     },
   },
   // The rules you control.
@@ -468,26 +475,33 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
 ```jsonc
 // ~/.tare/config.jsonc
 {
-  // Modelli candidati, uno per economia. `base_url` è usato dal proxy (M4).
+  // Modelli candidati, uno per economia. I campi di routing del proxy sono opzionali:
+  //   baseUrl       endpoint upstream (assente → default Anthropic)
+  //   apiKeyEnv     NOME della env var con la chiave (mai la chiave qui dentro;
+  //                 assente → si inoltra l'header di auth in ingresso)
+  //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
   "models": {
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
       "tokenCapacity": 1000000,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
     },
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "GLM_LITE_API_KEY",
     },
     "deepseek": {
       "economy": "metered",
       "currency": "USD",
       "priceInPerMillion": 0.27,
       "priceOutPerMillion": 0.41,
-      "base_url": "…",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
     },
   },
   // Le regole che controlli tu.
