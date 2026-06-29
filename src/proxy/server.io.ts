@@ -202,6 +202,16 @@ async function relayStreamAndRecord(
   clientModel: string | undefined,
   log: (m: string) => void,
 ): Promise<void> {
+  // Errore upstream (non è uno stream SSE): logga il motivo e rigiralo al client.
+  if (upstream.status >= 400) {
+    const errText = await upstream.text();
+    log(`[tare] upstream ${upstream.status} da ${chosen.name}: ${errText.slice(0, 500)}`);
+    res.writeHead(upstream.status, {
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+    });
+    res.end(errText);
+    return;
+  }
   res.writeHead(upstream.status, relayHeaders(upstream));
   if (!upstream.body) {
     res.end();
@@ -335,6 +345,10 @@ async function handle(
 
   const text = await upstream.text();
   let outText = text;
+
+  if (upstream.status >= 400) {
+    r.log(`[tare] upstream ${upstream.status} da ${chosen.name}: ${text.slice(0, 500)}`);
+  }
 
   // Consumo reale → ledger PRIMA di rispondere: così la richiesta successiva
   // dell'agente vede già il budget aggiornato (niente race sul ledger). Errori
