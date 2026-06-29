@@ -11,6 +11,7 @@ export {
   resolveUpstreamBase,
   rewriteResponseModel,
   rewriteSseModelLine,
+  stripThinkingBlocks,
   toUsage,
   withUpstreamModel,
 } from "./forward.js";

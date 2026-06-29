@@ -130,6 +130,25 @@ export function withUpstreamModel(body: unknown, model: ModelConfig): Record<str
 }
 
 /**
+ * Rimuove i blocchi `thinking`/`redacted_thinking` dalla cronologia dei messaggi.
+ * Pura. Necessario col multi-provider: un blocco di reasoning prodotto da un
+ * provider ha una firma valida solo per quel provider; reinoltrarlo a un altro
+ * (es. cronologia GLM → richiesta a Claude) fa fallire la validazione della firma.
+ * Sono contesto opzionale dei turni passati: ometterli è sicuro e sblocca lo switch.
+ */
+export function stripThinkingBlocks(body: unknown): unknown {
+  if (!isPlainObject(body) || !Array.isArray(body.messages)) return body;
+  const messages = body.messages.map((msg) => {
+    if (!isPlainObject(msg) || !Array.isArray(msg.content)) return msg;
+    const filtered = msg.content.filter(
+      (b) => !(isPlainObject(b) && (b.type === "thinking" || b.type === "redacted_thinking")),
+    );
+    return filtered.length === msg.content.length ? msg : { ...msg, content: filtered };
+  });
+  return { ...body, messages };
+}
+
+/**
  * Estrae i token consumati dall'`usage` della risposta del provider. `null` se
  * la risposta non riporta usage (es. errore upstream): in tal caso il bordo non
  * aggiorna il ledger. Campi assenti contano 0 (Anthropic riporta i due campi).

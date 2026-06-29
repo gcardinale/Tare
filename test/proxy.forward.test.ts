@@ -11,6 +11,7 @@ import {
   resolveUpstreamBase,
   rewriteResponseModel,
   rewriteSseModelLine,
+  stripThinkingBlocks,
   toUsage,
   withUpstreamModel,
 } from "../src/proxy/index.js";
@@ -170,6 +171,39 @@ describe("withUpstreamModel", () => {
   it("body non oggetto → oggetto vuoto (eventualmente col model)", () => {
     expect(withUpstreamModel(null, capped)).toEqual({});
     expect(withUpstreamModel(null, { ...capped, upstreamModel: "m" })).toEqual({ model: "m" });
+  });
+});
+
+describe("stripThinkingBlocks", () => {
+  it("rimuove thinking e redacted_thinking, preserva il resto", () => {
+    const body = {
+      model: "x",
+      messages: [
+        { role: "user", content: "ciao" },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "...", signature: "abc" },
+            { type: "redacted_thinking", data: "..." },
+            { type: "text", text: "risposta" },
+          ],
+        },
+      ],
+    };
+    const out = stripThinkingBlocks(body) as typeof body;
+    expect(out.messages[0]).toEqual({ role: "user", content: "ciao" }); // stringa intatta
+    expect(out.messages[1]!.content).toEqual([{ type: "text", text: "risposta" }]);
+    expect(out.model).toBe("x");
+  });
+
+  it("nessun thinking → messaggi invariati", () => {
+    const body = { messages: [{ role: "user", content: [{ type: "text", text: "x" }] }] };
+    expect(stripThinkingBlocks(body)).toEqual(body);
+  });
+
+  it("body non valido → invariato", () => {
+    expect(stripThinkingBlocks(null)).toBeNull();
+    expect(stripThinkingBlocks({ foo: 1 })).toEqual({ foo: 1 });
   });
 });
 

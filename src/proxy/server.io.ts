@@ -38,6 +38,7 @@ import {
   resolveUpstreamBase,
   rewriteResponseModel,
   rewriteSseModelLine,
+  stripThinkingBlocks,
   toUsage,
   withUpstreamModel,
 } from "./forward.js";
@@ -331,7 +332,8 @@ async function handle(
 
   const headers = buildForwardHeaders(req.headers, keyR.value, chosen.authStyle);
   headers["content-type"] = "application/json"; // body riserializzato in JSON
-  const fwdBody = JSON.stringify(withUpstreamModel(body, chosen));
+  // Sostituisce il model e ripulisce i thinking block di altri provider dalla cronologia.
+  const fwdBody = JSON.stringify(stripThinkingBlocks(withUpstreamModel(body, chosen)));
   // Append del path della richiesta al baseUrl (preserva eventuali prefissi come
   // `/api/anthropic` e la query): vedi joinUpstreamUrl.
   const url = joinUpstreamUrl(
