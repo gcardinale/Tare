@@ -170,3 +170,14 @@ export interface TareConfig {
   readonly models: readonly ModelConfig[];
   readonly policy: Policy;
 }
+
+// ─── Orchestrator ────────────────────────────────────────────────────────────
+
+/**
+ * Esito completo della pipeline pura (classify → route): la classificazione del
+ * task e la decisione di instradamento. È ciò che il preflight (M4) mostra.
+ */
+export interface Plan {
+  readonly classification: Classification;
+  readonly decision: RouteDecision;
+}
