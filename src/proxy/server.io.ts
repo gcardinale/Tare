@@ -34,6 +34,12 @@ import {
 /** Upstream di default quando un modello non specifica `baseUrl` o per il passthrough. */
 const DEFAULT_UPSTREAM = "https://api.anthropic.com";
 
+/** Tetto di sicurezza sul corpo richiesta (audit R2). Generoso: i contesti grandi
+ * pesano vari MB; serve solo a fermare un client che inonda la memoria. */
+const MAX_BODY_BYTES = 64 * 1024 * 1024;
+/** Timeout di lettura del corpo (audit R2): una connessione lenta non resta appesa. */
+const BODY_TIMEOUT_MS = 120_000;
+
 export interface ProxyOptions {
   readonly host?: string;
   readonly port?: number;
@@ -65,13 +71,34 @@ function resolveOptions(opts: ProxyOptions): Resolved {
   };
 }
 
-/** Legge tutto il corpo della richiesta come stringa UTF-8. */
+/**
+ * Legge tutto il corpo della richiesta come stringa UTF-8, con tetto sulla
+ * dimensione e timeout (audit R2): un client che non invia mai i dati o inonda
+ * la memoria non tiene appesa né satura il processo.
+ */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    let size = 0;
+    const timer = setTimeout(() => {
+      req.destroy();
+      reject(new Error("timeout lettura corpo richiesta"));
+    }, BODY_TIMEOUT_MS);
+    const done = (fn: () => void): void => {
+      clearTimeout(timer);
+      fn();
+    };
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        req.destroy();
+        done(() => reject(new Error("corpo richiesta troppo grande")));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => done(() => resolve(Buffer.concat(chunks).toString("utf8"))));
+    req.on("error", (e) => done(() => reject(e)));
   });
 }
 
@@ -93,19 +120,33 @@ function relayHeaders(upstream: Response): Record<string, string> {
   return out;
 }
 
-/** Pipe del corpo (web stream) della risposta upstream al client, byte per byte. */
-async function pipeBody(res: ServerResponse, upstream: Response): Promise<void> {
+/**
+ * Pipe del corpo (web stream) della risposta upstream al client, byte per byte.
+ * Se lo stream upstream si interrompe (audit R4) si distrugge la connessione col
+ * client: una risposta troncata senza segnale lascerebbe il client a interpretare
+ * dati incompleti come validi.
+ */
+async function pipeBody(
+  res: ServerResponse,
+  upstream: Response,
+  log: (m: string) => void,
+): Promise<void> {
   if (!upstream.body) {
     res.end();
     return;
   }
   const reader = upstream.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) res.write(Buffer.from(value));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) res.write(Buffer.from(value));
+    }
+    res.end();
+  } catch (e) {
+    log(`[tare] stream upstream interrotto: ${(e as Error).message}`);
+    res.destroy();
   }
-  res.end();
 }
 
 /**
@@ -128,7 +169,7 @@ async function passthrough(
   try {
     const upstream = await fetchImpl(url, init);
     res.writeHead(upstream.status, relayHeaders(upstream));
-    await pipeBody(res, upstream);
+    await pipeBody(res, upstream, log);
   } catch (e) {
     log(`passthrough fallito (${url}): ${(e as Error).message}`);
     sendJson(res, 502, { error: `upstream non raggiungibile: ${(e as Error).message}` });
@@ -193,6 +234,7 @@ async function handle(
   if (!keyR.ok) return fallbackTo(keyR.error);
 
   const headers = buildForwardHeaders(req.headers, keyR.value);
+  headers["content-type"] = "application/json"; // body riserializzato in JSON
   const fwdBody = JSON.stringify(withUpstreamModel(body, chosen));
   const url = new URL("/v1/messages", resolveUpstreamBase(chosen, r.fallbackBaseUrl)).toString();
 

@@ -64,7 +64,7 @@ describe("resolveApiKey", () => {
 });
 
 describe("buildForwardHeaders", () => {
-  it("rimuove hop-by-hop, forza content-type json, normalizza in lowercase", () => {
+  it("rimuove hop-by-hop e normalizza in lowercase, preservando l'auth in ingresso", () => {
     const h = buildForwardHeaders(
       {
         Host: "tare",
@@ -78,9 +78,15 @@ describe("buildForwardHeaders", () => {
     expect(h).not.toHaveProperty("host");
     expect(h).not.toHaveProperty("content-length");
     expect(h).not.toHaveProperty("connection");
-    expect(h["content-type"]).toBe("application/json");
     expect(h["anthropic-version"]).toBe("2023-06-01");
     expect(h["x-api-key"]).toBe("in"); // auth in ingresso preservata
+  });
+
+  it("non forza content-type: assente se non in ingresso, preservato se presente (R3)", () => {
+    expect(buildForwardHeaders({}, null)).not.toHaveProperty("content-type");
+    expect(buildForwardHeaders({ "content-type": "text/plain" }, null)["content-type"]).toBe(
+      "text/plain",
+    );
   });
 
   it("con apiKey: imposta x-api-key e rimuove authorization", () => {

@@ -149,7 +149,10 @@ export function route(
   const best = eligible[0]!;
   const alternatives = eligible.slice(1).map((x) => x.candidate);
 
-  // auto-pass: solo per il metered scelto, sotto la soglia in $ (l'unica nella Policy).
+  // auto-pass: solo per il metered scelto, sotto la soglia (l'unica nella Policy).
+  // NB (audit R6): la soglia e la stima si assumono NELLA STESSA VALUTA del modello.
+  // Il nome `meteredUsd` è storico; con un modello non-USD va intesa in quella valuta.
+  // Niente conversione cross-currency qui: confrontare valute diverse non avrebbe senso.
   const meteredThreshold = policy.autoPassCostBelow?.meteredUsd;
   const autoPass =
     best.economy === "metered" &&

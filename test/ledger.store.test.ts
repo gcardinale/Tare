@@ -145,4 +145,20 @@ describe("recordActual — load → record → save atomico", () => {
     expect(r.ok).toBe(false);
     expect(await readFile(path, "utf8")).toBe("rotto");
   });
+
+  // Regressione R1: scritture concorrenti non devono perdersi (lost update).
+  // Senza la serializzazione, l'ultimo save sovrascriverebbe i precedenti.
+  it("recordActual concorrenti sullo stesso modello sommano tutto (R1)", async () => {
+    await saveLedger(sample, path);
+    const N = 20;
+    const results = await Promise.all(
+      Array.from({ length: N }, () =>
+        recordActual("opus", { inputTokens: 60, outputTokens: 40 }, path),
+      ),
+    );
+    expect(results.every((r) => r.ok)).toBe(true);
+    const onDisk = await loadLedger(path);
+    expect(onDisk.ok).toBe(true);
+    if (onDisk.ok) expect(onDisk.value.models.opus).toMatchObject({ used: N * 100 });
+  });
 });

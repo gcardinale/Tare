@@ -63,10 +63,11 @@ const DROP_HEADERS: ReadonlySet<string> = new Set([
 
 /**
  * Costruisce gli header per la chiamata upstream a partire da quelli in ingresso.
- * Pura. Rimuove gli header hop-by-hop, forza `content-type: application/json`
- * (il body viene riserializzato) e gestisce l'auth: se `apiKey` è fornita, la
+ * Pura. Rimuove gli header hop-by-hop e gestisce l'auth: se `apiKey` è fornita, la
  * imposta come `x-api-key` e rimuove l'`authorization` in ingresso; altrimenti
- * lascia passare gli header di auth originali.
+ * lascia passare gli header di auth originali. NON forza `content-type`: lo fa il
+ * percorso routed dove il body è riserializzato in JSON (il passthrough preserva
+ * il content-type originale, così una GET senza body non ne acquista uno, R3).
  */
 export function buildForwardHeaders(
   incoming: Record<string, string | string[] | undefined>,
@@ -78,7 +79,6 @@ export function buildForwardHeaders(
     if (DROP_HEADERS.has(key) || v === undefined) continue;
     out[key] = Array.isArray(v) ? v.join(", ") : v;
   }
-  out["content-type"] = "application/json";
   if (apiKey !== null) {
     out["x-api-key"] = apiKey;
     delete out["authorization"];

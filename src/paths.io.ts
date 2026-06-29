@@ -15,11 +15,17 @@ export function tareDir(): string {
 }
 
 /**
- * Rimuove i file `.tmp` orfani nella cartella di stato (audit D4). Le scritture
- * atomiche di config/ledger usano `<file>.<pid>.tmp` + rename; un crash a metà
- * può lasciarne indietro. `tare up` ripulisce all'avvio. Best-effort: la cartella
- * assente non è un errore, i file non rimovibili vengono ignorati. Ritorna il
- * numero di file effettivamente rimossi.
+ * Solo i tmp generati dalle scritture atomiche di Tare: `config.jsonc.<n>.tmp`,
+ * `ledger.json.<pid>.<seq>.tmp`, ecc. Non tocca `.tmp` di altri tool/utente (R5).
+ */
+const TARE_TMP_RE = /^(config\.jsonc|ledger\.json)(\.\d+)+\.tmp$/;
+
+/**
+ * Rimuove i file `.tmp` orfani di Tare nella cartella di stato (audit D4). Le
+ * scritture atomiche di config/ledger usano `<file>.<pid>.<seq>.tmp` + rename; un
+ * crash a metà può lasciarne indietro. `tare up` ripulisce all'avvio. Best-effort:
+ * la cartella assente non è un errore, i file non rimovibili vengono ignorati.
+ * Ritorna il numero di file effettivamente rimossi.
  */
 export async function cleanupOrphanTmp(dir = tareDir()): Promise<number> {
   let entries: string[];
@@ -31,7 +37,7 @@ export async function cleanupOrphanTmp(dir = tareDir()): Promise<number> {
   }
   let removed = 0;
   for (const name of entries) {
-    if (!name.endsWith(".tmp")) continue;
+    if (!TARE_TMP_RE.test(name)) continue;
     try {
       await unlink(join(dir, name));
       removed += 1;

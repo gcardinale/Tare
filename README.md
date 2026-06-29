@@ -228,6 +228,9 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
     "singlePassBelowTokens": 15000,
     "opusMinHeadroomPct": 20,
     "preferCappedOverMetered": true,
+    // Auto-pass threshold. Despite the name, it is compared in the chosen model's
+    // own currency (no cross-currency conversion): with a non-USD model, read it
+    // as "that currency".
     "autoPassCostBelow": { "meteredUsd": 0.01 },
   },
   // Coming in M4 — not read by the loader yet:
@@ -509,6 +512,9 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
     "singlePassBelowTokens": 15000,
     "opusMinHeadroomPct": 20,
     "preferCappedOverMetered": true,
+    // Soglia di auto-pass. Nonostante il nome, è confrontata NELLA VALUTA del
+    // modello scelto (nessuna conversione cross-currency): con un modello non-USD,
+    // intendila in quella valuta.
     "autoPassCostBelow": { "meteredUsd": 0.01 },
   },
   // In arrivo (M4) — non ancora letti dal loader:

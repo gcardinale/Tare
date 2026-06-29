@@ -83,9 +83,14 @@ export async function loadLedger(path = defaultLedgerPath()): Promise<Result<Led
   return ok(parsed as unknown as Ledger);
 }
 
+/** Contatore per nomi tmp univoci: due scritture nello stesso processo non collidono. */
+let tmpSeq = 0;
+
 /**
  * Salva il ledger in modo atomico: scrive su un file temporaneo nella stessa
  * cartella e poi lo rinomina sul target (rename atomico su stesso filesystem).
+ * Il nome tmp include pid + un contatore: due `saveLedger` concorrenti nello
+ * stesso processo non scrivono mai sullo stesso tmp (audit R1).
  */
 export async function saveLedger(
   ledger: Ledger,
@@ -93,7 +98,7 @@ export async function saveLedger(
 ): Promise<Result<void>> {
   try {
     await mkdir(dirname(path), { recursive: true });
-    const tmp = `${path}.${process.pid}.tmp`;
+    const tmp = `${path}.${process.pid}.${tmpSeq++}.tmp`;
     await writeFile(tmp, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
     await rename(tmp, path);
     return ok(undefined);
@@ -103,14 +108,18 @@ export async function saveLedger(
 }
 
 /**
- * Registra il consumo reale di un run e persiste: load → recordUsage (puro) →
- * save atomico. Ritorna il ledger aggiornato. Qualsiasi errore (I/O o modello
- * sconosciuto) ferma la catena con un `Result.err`, senza scrivere nulla.
+ * Catena che serializza i `recordActual` nel processo: il prossimo aspetta che
+ * il precedente abbia finito l'intero load → record → save. Senza, due richieste
+ * concorrenti caricherebbero lo stesso stato e l'ultimo save sovrascriverebbe il
+ * primo, perdendone il consumo (audit R1, "lost update"). `.catch` tiene viva la
+ * catena se un passo rigetta inaspettatamente; il risultato vero torna al chiamante.
  */
-export async function recordActual(
+let recordChain: Promise<unknown> = Promise.resolve();
+
+async function recordActualInner(
   model: string,
   usage: Usage,
-  path = defaultLedgerPath(),
+  path: string,
 ): Promise<Result<Ledger>> {
   const loaded = await loadLedger(path);
   if (!loaded.ok) return loaded;
@@ -122,4 +131,20 @@ export async function recordActual(
   if (!saved.ok) return saved;
 
   return ok(updated.value);
+}
+
+/**
+ * Registra il consumo reale di un run e persiste: load → recordUsage (puro) →
+ * save atomico. Ritorna il ledger aggiornato. Qualsiasi errore (I/O o modello
+ * sconosciuto) ferma la catena con un `Result.err`, senza scrivere nulla.
+ * Le chiamate sono serializzate nel processo per evitare i lost update (R1).
+ */
+export function recordActual(
+  model: string,
+  usage: Usage,
+  path = defaultLedgerPath(),
+): Promise<Result<Ledger>> {
+  const run = recordChain.then(() => recordActualInner(model, usage, path));
+  recordChain = run.catch(() => undefined);
+  return run;
 }
