@@ -194,21 +194,40 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
 ```jsonc
 // ~/.tare/config.jsonc
 {
+  // Candidate models, one per economy. `base_url` is used by the proxy (M4).
+  "models": {
+    "opus": {
+      "economy": "subscription_cap",
+      "period": "weekly",
+      "tokenCapacity": 1000000,
+      "base_url": "…",
+    },
+    "glm-lite": {
+      "economy": "tiered_quota",
+      "period": "weekly",
+      "tokenCapacity": 2000000,
+      "base_url": "…",
+    },
+    "deepseek": {
+      "economy": "metered",
+      "currency": "USD",
+      "priceInPerMillion": 0.27,
+      "priceOutPerMillion": 0.41,
+      "base_url": "…",
+    },
+  },
+  // The rules you control.
+  "policy": {
+    "singlePassBelowTokens": 15000,
+    "opusMinHeadroomPct": 20,
+    "preferCappedOverMetered": true,
+    "autoPassCostBelow": { "meteredUsd": 0.01 },
+  },
+  // Coming in M4 — not read by the loader yet:
   "classifier": {
     "backend": "local", // local GGUF judge. free, private, runs on your machine.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
     "calibrate_from": "~/.tare/logs",
-  },
-  "models": {
-    "opus": { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
-    "glm-lite": { "economy": "tiered_quota", "base_url": "…", "weekly_cap": 100 },
-    "deepseek": { "economy": "metered", "base_url": "…", "price_in": 0.27, "price_out": 0.41 },
-  },
-  "policy": {
-    "single_pass_below_tokens": 15000,
-    "opus_min_headroom_pct": 20,
-    "prefer_capped_over_metered": true,
-    "auto_pass_cost_below": { "metered_usd": 0.01 },
   },
   "preflight": {
     "always_prompt_when": ["agentic", "metered_spend", "tight_budget"],
@@ -449,21 +468,40 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
 ```jsonc
 // ~/.tare/config.jsonc
 {
+  // Modelli candidati, uno per economia. `base_url` è usato dal proxy (M4).
+  "models": {
+    "opus": {
+      "economy": "subscription_cap",
+      "period": "weekly",
+      "tokenCapacity": 1000000,
+      "base_url": "…",
+    },
+    "glm-lite": {
+      "economy": "tiered_quota",
+      "period": "weekly",
+      "tokenCapacity": 2000000,
+      "base_url": "…",
+    },
+    "deepseek": {
+      "economy": "metered",
+      "currency": "USD",
+      "priceInPerMillion": 0.27,
+      "priceOutPerMillion": 0.41,
+      "base_url": "…",
+    },
+  },
+  // Le regole che controlli tu.
+  "policy": {
+    "singlePassBelowTokens": 15000,
+    "opusMinHeadroomPct": 20,
+    "preferCappedOverMetered": true,
+    "autoPassCostBelow": { "meteredUsd": 0.01 },
+  },
+  // In arrivo (M4) — non ancora letti dal loader:
   "classifier": {
     "backend": "local", // giudice GGUF locale. gratuito, privato, gira sulla tua macchina.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
     "calibrate_from": "~/.tare/logs",
-  },
-  "models": {
-    "opus": { "economy": "subscription_cap", "base_url": "…", "weekly_cap": 100 },
-    "glm-lite": { "economy": "tiered_quota", "base_url": "…", "weekly_cap": 100 },
-    "deepseek": { "economy": "metered", "base_url": "…", "price_in": 0.27, "price_out": 0.41 },
-  },
-  "policy": {
-    "single_pass_below_tokens": 15000,
-    "opus_min_headroom_pct": 20,
-    "prefer_capped_over_metered": true,
-    "auto_pass_cost_below": { "metered_usd": 0.01 },
   },
   "preflight": {
     "always_prompt_when": ["agentic", "metered_spend", "tight_budget"],
