@@ -121,6 +121,16 @@ export interface ModelRoles {
 }
 
 /**
+ * Modalità consentite su un modello. Opzionale: assente = tutte. Serve a vincolare
+ * un modello a una sola modalità — es. un piano a quota piccola (GLM Lite) che NON
+ * deve mai gestire loop agentici: `modes: ["single_pass"]`. Il router esclude il
+ * modello quando la modalità effettiva del task non è tra quelle consentite.
+ */
+export interface ModelModes {
+  readonly modes?: readonly Mode[];
+}
+
+/**
  * Configurazione di un modello, una per economia. È ciò che serve all'estimator
  * per trasformare i token in costo nell'unità giusta.
  *
@@ -135,14 +145,16 @@ export type ModelConfig =
       readonly period: Period;
       readonly periodTokenCapacity: number;
     } & ModelRouting &
-      ModelRoles)
+      ModelRoles &
+      ModelModes)
   | ({
       readonly name: string;
       readonly economy: "tiered_quota";
       readonly period: Period;
       readonly periodTokenCapacity: number;
     } & ModelRouting &
-      ModelRoles)
+      ModelRoles &
+      ModelModes)
   | ({
       readonly name: string;
       readonly economy: "metered";
@@ -152,7 +164,8 @@ export type ModelConfig =
       /** Prezzo per 1.000.000 di token di output. */
       readonly pricePerMillionOutput: number;
     } & ModelRouting &
-      ModelRoles);
+      ModelRoles &
+      ModelModes);
 
 // ─── Estimator ───────────────────────────────────────────────────────────────
 

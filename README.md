@@ -203,6 +203,8 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
   //   upstreamModel model id to send to the provider (absent → the request's own)
   //   roles         ["review"] and/or ["write"]: with policy.roleRouting "strict",
   //                 dedicates the model to that kind of task. Absent = wildcard.
+  //   modes         ["single_pass"] and/or ["agentic"]: allowed modes. Absent = all.
+  //                 e.g. a small quota capped to single_pass (never agentic loops).
   "models": {
     // Pro/Max subscription (e.g. Opus) used via Claude Code: NO apiKeyEnv.
     // Here dedicated to WRITING code.
@@ -213,7 +215,8 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
       "baseUrl": "https://api.anthropic.com",
       "roles": ["write"],
     },
-    // Key-based model dedicated to code REVIEW.
+    // Key-based model for code REVIEW; small quota → single_pass only (never
+    // agentic loops that would drain it).
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
@@ -221,6 +224,7 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
       "baseUrl": "https://api.anthropic.com",
       "apiKeyEnv": "GLM_LITE_API_KEY",
       "roles": ["review"],
+      "modes": ["single_pass"],
     },
     // Metered wildcard: no roles, covers ambiguous tasks.
     "deepseek": {
@@ -506,6 +510,8 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
   //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
   //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
+  //   modes         ["single_pass"] e/o ["agentic"]: modalità consentite. Assente =
+  //                 tutte. Es. una quota piccola limitata a single_pass (mai loop).
   "models": {
     // Abbonamento Pro/Max (es. Opus) via Claude Code: NIENTE apiKeyEnv.
     // Qui dedicato alla SCRITTURA del codice.
@@ -516,7 +522,8 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
       "baseUrl": "https://api.anthropic.com",
       "roles": ["write"],
     },
-    // Modello a chiave dedicato alle REVIEW del codice.
+    // Modello a chiave per le REVIEW; quota piccola → solo single_pass (mai loop
+    // agentici che la prosciugherebbero).
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
@@ -524,6 +531,7 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
       "baseUrl": "https://api.anthropic.com",
       "apiKeyEnv": "GLM_LITE_API_KEY",
       "roles": ["review"],
+      "modes": ["single_pass"],
     },
     // Jolly a consumo: nessun ruolo, copre i task ambigui.
     "deepseek": {

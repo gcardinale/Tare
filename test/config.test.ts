@@ -237,6 +237,56 @@ describe("parseConfig — ruoli e roleRouting (M6)", () => {
       ).ok,
     ).toBe(false);
   });
+
+  it("mappa modes sul modello", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "modes": ["single_pass"] }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.models[0]).toMatchObject({ modes: ["single_pass"] });
+  });
+
+  it("modes assente → modello senza modes (tutte ammesse)", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2 }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.models[0]).not.toHaveProperty("modes");
+  });
+
+  it("modes non array → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "modes": "single_pass" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("modes vuoto → err (bloccherebbe il modello)", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "modes": [] }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("modalità non valida → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "modes": ["turbo"] }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
 });
 
 describe("parseConfig — errori struttura", () => {

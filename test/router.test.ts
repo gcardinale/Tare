@@ -123,6 +123,29 @@ describe("route — routing per ruolo (strict)", () => {
   });
 });
 
+// ─── Modalità consentite per modello (modes) ────────────────────────────────
+
+describe("route — modalità consentite per modello (modes)", () => {
+  const glm: ModelConfig = { ...lite, name: "glm", modes: ["single_pass"] }; // quota piccola: mai agentico
+  const empty: Ledger = { models: {} };
+  const agentic = cls("agentic", [20_000, 50_000]); // sopra soglia → modalità effettiva agentica
+  const single = cls("single_pass", [1000, 2000]);
+
+  it("task agentico: il modello single_pass-only è escluso → nessun candidato", () => {
+    expect(route(agentic, [glm], empty, policy()).ok).toBe(false);
+  });
+
+  it("task single_pass: il modello single_pass-only è idoneo", () => {
+    const r = route(single, [glm], empty, policy());
+    expect(r.ok && r.value.model).toBe("glm");
+  });
+
+  it("task agentico: instrada su un modello senza vincolo, mai su quello single_pass-only", () => {
+    const r = route(agentic, [glm, opus], empty, policy());
+    expect(r.ok && r.value.model).toBe("opus");
+  });
+});
+
 // ─── Idoneità per economia (DEC-ROUTER-2) ───────────────────────────────────
 
 describe("route — idoneità budget/policy", () => {

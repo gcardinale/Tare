@@ -64,6 +64,14 @@ function isWildcard(m: ModelConfig): boolean {
 }
 
 /**
+ * La modalità effettiva è consentita su questo modello? Senza `modes` = tutte.
+ * Vincola es. un piano a quota piccola al solo `single_pass` (mai loop agentici).
+ */
+function modeAllowed(m: ModelConfig, mode: Mode): boolean {
+  return m.modes === undefined || m.modes.includes(mode);
+}
+
+/**
  * Restringe i candidati per ruolo (DEC-ROUTER-3). Con `roleRouting: "strict"` un
  * task-review va SOLO sui modelli con ruolo "review" e un task-write SOLO su quelli
  * "write" (la "forzatura" richiesta): così le due attività usano budget separati.
@@ -159,7 +167,11 @@ export function route(
   };
 
   // DEC-ROUTER-3: restringi per ruolo PRIMA del filtro budget (routing per ruolo).
-  const candidates = pickByRole(models, classification.role, policy.roleRouting);
+  // Poi escludi i modelli che non consentono la modalità effettiva (es. GLM Lite
+  // vincolato a single_pass non riceve mai un task agentico).
+  const candidates = pickByRole(models, classification.role, policy.roleRouting).filter((m) =>
+    modeAllowed(m, mode),
+  );
 
   // Costruisci le candidature idonee.
   const eligible: Ranked[] = candidates

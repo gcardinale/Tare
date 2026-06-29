@@ -17,6 +17,7 @@
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 
 import type {
+  Mode,
   ModelConfig,
   ModelRouting,
   Period,
@@ -34,6 +35,7 @@ function isPlainObject(x: unknown): x is Record<string, unknown> {
 const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const isPeriod = (x: unknown): x is Period => x === "weekly" || x === "monthly";
 const isRole = (x: unknown): x is Role => x === "review" || x === "write";
+const isMode = (x: unknown): x is Mode => x === "single_pass" || x === "agentic";
 
 /**
  * Estrae e valida i `roles` di un modello (routing per ruolo). Assenti/null →
@@ -50,6 +52,29 @@ function toRoles(name: string, def: Record<string, unknown>): Result<{ roles?: r
     roles.push(x);
   }
   return ok({ roles });
+}
+
+/**
+ * Estrae e valida i `modes` consentiti su un modello. Assenti/null → oggetto vuoto
+ * (tutte le modalità). Ogni voce deve essere `single_pass` o `agentic`. Un array
+ * vuoto è un errore: bloccherebbe il modello per qualsiasi modalità.
+ */
+function toModes(name: string, def: Record<string, unknown>): Result<{ modes?: readonly Mode[] }> {
+  if (def.modes === undefined || def.modes === null) return ok({});
+  if (!Array.isArray(def.modes)) return err(`modello "${name}": "modes" deve essere un array`);
+  if (def.modes.length === 0) {
+    return err(`modello "${name}": "modes" vuoto bloccherebbe il modello (ometti il campo)`);
+  }
+  const modes: Mode[] = [];
+  for (const x of def.modes) {
+    if (!isMode(x)) {
+      return err(
+        `modello "${name}": modalità non valida "${String(x)}" (atteso single_pass|agentic)`,
+      );
+    }
+    modes.push(x);
+  }
+  return ok({ modes });
 }
 
 const isHttpUrl = (x: string): boolean => {
@@ -97,7 +122,9 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
   if (!routing.ok) return routing;
   const rolesR = toRoles(name, def);
   if (!rolesR.ok) return rolesR;
-  const r = { ...routing.value, ...rolesR.value };
+  const modesR = toModes(name, def);
+  if (!modesR.ok) return modesR;
+  const r = { ...routing.value, ...rolesR.value, ...modesR.value };
 
   if (def.economy === "metered") {
     if (typeof def.currency !== "string") return err(`modello "${name}": "currency" mancante`);
@@ -233,6 +260,8 @@ export const DEFAULT_CONFIG_JSONC = `{
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
   //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
   //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
+  //   modes         ["single_pass"] e/o ["agentic"]: modalità consentite. Assente =
+  //                 tutte. Es. una quota piccola limitata a single_pass (mai loop).
   "models": {
     // Abbonamento Pro/Max (es. Opus) usato via Claude Code: NIENTE apiKeyEnv.
     // Qui dedicato alla SCRITTURA del codice.
@@ -243,14 +272,16 @@ export const DEFAULT_CONFIG_JSONC = `{
       "baseUrl": "https://api.anthropic.com",
       "roles": ["write"]
     },
-    // Modello a chiave (es. "Lite") dedicato alle REVIEW del codice.
+    // Modello a chiave (es. "Lite") dedicato alle REVIEW; quota piccola → SOLO
+    // single_pass, mai loop agentici che la esaurirebbero.
     "lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
       "baseUrl": "https://api.anthropic.com",
       "apiKeyEnv": "LITE_API_KEY",
-      "roles": ["review"]
+      "roles": ["review"],
+      "modes": ["single_pass"]
     },
     // Jolly a consumo: nessun ruolo, copre i task ambigui.
     "pay": {
