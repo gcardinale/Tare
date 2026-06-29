@@ -1,5 +1,5 @@
 {
-  "name": "tare",
+  "name": "@gcardinale/tare",
   "version": "0.0.0",
   "description": "Budget-aware preflight for AI coding agents — decide single-pass vs. agentic, estimate cost across your models, and route within budget before execution begins.",
   "type": "module",
@@ -7,6 +7,9 @@
   "author": "gcardinale",
   "bin": {
     "tare": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"

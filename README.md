@@ -177,7 +177,7 @@ A tool that says "between 28k and 52k tokens, confidence 0.6" and is right about
 
 ```bash
 # install
-npm install -g tare        # or: brew install tare
+npm install -g @gcardinale/tare        # the command is still `tare`
 
 # point your agent at the proxy (example: an agent that accepts a custom base URL)
 export ANTHROPIC_BASE_URL=http://127.0.0.1:3210
@@ -480,7 +480,7 @@ Uno strumento che dice "tra 28k e 52k token, confidenza 0,6" ed è giusto sulla 
 
 ```bash
 # installa
-npm install -g tare        # oppure: brew install tare
+npm install -g @gcardinale/tare        # il comando resta `tare`
 
 # punta il tuo agente al proxy (esempio: un agente che accetta una base URL personalizzata)
 export ANTHROPIC_BASE_URL=http://127.0.0.1:3210
