@@ -101,7 +101,7 @@ beforeAll(async () => {
         res.end(
           [
             `event: message_start`,
-            `data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":30,"output_tokens":1}}}`,
+            `data: {"type":"message_start","message":{"id":"msg_1","model":"real-model","usage":{"input_tokens":30,"output_tokens":1}}}`,
             ``,
             `event: message_delta`,
             `data: {"type":"message_delta","usage":{"output_tokens":20}}`,
@@ -118,6 +118,7 @@ beforeAll(async () => {
             id: "msg_1",
             type: "message",
             role: "assistant",
+            model: "real-model",
             content: [{ type: "text", text: "ok" }],
             usage: { input_tokens: 12, output_tokens: 8 },
           }),
@@ -167,8 +168,10 @@ describe("proxy e2e — routing enforcing (non-stream)", () => {
       }),
     });
     expect(resp.status).toBe(200);
-    const json = (await resp.json()) as { usage: { input_tokens: number } };
+    const json = (await resp.json()) as { usage: { input_tokens: number }; model: string };
     expect(json.usage.input_tokens).toBe(12);
+    // Trasparenza: il client rivede il PROPRIO model id ("alias"), non "real-model".
+    expect(json.model).toBe("alias");
 
     // L'upstream ha ricevuto la chiave del modello (non quella del client) e il model sostituito.
     expect(captured.headers["x-api-key"]).toBe("secret");
@@ -204,6 +207,9 @@ describe("proxy e2e — routing enforcing (non-stream)", () => {
     expect(resp.headers.get("content-type")).toContain("text/event-stream");
     const text = await resp.text();
     expect(text).toContain("message_start"); // gli eventi SSE sono arrivati al client
+    // Trasparenza anche sullo stream: message_start riporta il model del client.
+    expect(text).toContain('"model":"alias"');
+    expect(text).not.toContain('"model":"real-model"');
 
     // Instradato come il non-stream: chiave del modello e model sostituito.
     expect(captured.headers["x-api-key"]).toBe("secret");

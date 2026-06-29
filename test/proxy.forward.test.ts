@@ -7,6 +7,8 @@ import {
   isStreamingRequest,
   resolveApiKey,
   resolveUpstreamBase,
+  rewriteResponseModel,
+  rewriteSseModelLine,
   toUsage,
   withUpstreamModel,
 } from "../src/proxy/index.js";
@@ -226,6 +228,55 @@ describe("toUsage", () => {
   it("capped/tiered: solo token, niente costCurrency", () => {
     const u = toUsage(capped, { inputTokens: 10, outputTokens: 20 });
     expect(u).toEqual({ inputTokens: 10, outputTokens: 20 });
+  });
+});
+
+describe("rewriteResponseModel", () => {
+  it("rimette il model del client nella risposta", () => {
+    expect(rewriteResponseModel({ model: "glm-5.2", usage: {} }, "claude-opus")).toEqual({
+      model: "claude-opus",
+      usage: {},
+    });
+  });
+  it("clientModel assente/vuoto o risposta senza model → invariata", () => {
+    expect(rewriteResponseModel({ model: "x" }, undefined)).toEqual({ model: "x" });
+    expect(rewriteResponseModel({ model: "x" }, "")).toEqual({ model: "x" });
+    expect(rewriteResponseModel({ usage: {} }, "claude")).toEqual({ usage: {} });
+    expect(rewriteResponseModel("non-oggetto", "claude")).toBe("non-oggetto");
+  });
+});
+
+describe("rewriteSseModelLine", () => {
+  it("riscrive message.model nell'evento message_start", () => {
+    const line = `data: {"type":"message_start","message":{"model":"glm-5.2","usage":{}}}\n`;
+    const out = rewriteSseModelLine(line, "claude-opus");
+    expect(out).toContain('"model":"claude-opus"');
+    expect(out.startsWith("data: ")).toBe(true);
+    expect(out.endsWith("\n")).toBe(true);
+  });
+  it("riscrive anche il model di primo livello e preserva i CRLF", () => {
+    const out = rewriteSseModelLine(`data: {"type":"x","model":"glm"}\r\n`, "claude");
+    expect(out).toContain('"model":"claude"');
+    expect(out.endsWith("\r\n")).toBe(true);
+  });
+  it("righe non-data, non-JSON, [DONE] o senza model → invariate", () => {
+    expect(rewriteSseModelLine(`event: message_start\n`, "claude")).toBe(`event: message_start\n`);
+    expect(rewriteSseModelLine(`data: [DONE]\n`, "claude")).toBe(`data: [DONE]\n`);
+    expect(rewriteSseModelLine(`data: non-json\n`, "claude")).toBe(`data: non-json\n`);
+    expect(rewriteSseModelLine(`data: {"type":"ping"}\n`, "claude")).toBe(
+      `data: {"type":"ping"}\n`,
+    );
+  });
+  it("clientModel assente → invariata", () => {
+    const line = `data: {"type":"message_start","message":{"model":"glm"}}\n`;
+    expect(rewriteSseModelLine(line, undefined)).toBe(line);
+  });
+  it("riga data senza newline finale: riscrive e non aggiunge newline", () => {
+    const out = rewriteSseModelLine(`data: {"type":"x","model":"glm"}`, "claude");
+    expect(out).toBe(`data: {"type":"x","model":"claude"}`);
+  });
+  it("data JSON ma non oggetto (array) → invariata", () => {
+    expect(rewriteSseModelLine(`data: [1,2]\n`, "claude")).toBe(`data: [1,2]\n`);
   });
 });
 

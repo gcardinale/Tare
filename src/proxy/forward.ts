@@ -176,6 +176,50 @@ export function toUsage(
   return tokens;
 }
 
+/**
+ * Trasparenza del model id: rimette nel JSON di risposta il `model` che il CLIENT
+ * aveva chiesto, al posto di quello del provider upstream. Senza questo, Claude
+ * Code vede un model id diverso da quello richiesto e considera il modello "non
+ * accessibile". Pura. `clientModel` assente/vuoto o risposta senza `model` → invariata.
+ */
+export function rewriteResponseModel(json: unknown, clientModel: string | undefined): unknown {
+  if (typeof clientModel !== "string" || clientModel === "" || !isPlainObject(json)) return json;
+  if (typeof json.model !== "string") return json;
+  return { ...json, model: clientModel };
+}
+
+/**
+ * Come sopra ma per UNA riga SSE `data:`: riscrive `message.model` (evento
+ * `message_start`) e l'eventuale `model` di primo livello col model del client.
+ * Le righe non-data o non-JSON restano intatte. Pura. Preserva il newline finale.
+ */
+export function rewriteSseModelLine(line: string, clientModel: string | undefined): string {
+  if (typeof clientModel !== "string" || clientModel === "") return line;
+  if (!line.startsWith("data:")) return line;
+  const newline = line.endsWith("\r\n") ? "\r\n" : line.endsWith("\n") ? "\n" : "";
+  const payload = line.slice(5).trim();
+  if (payload === "" || payload === "[DONE]") return line;
+  let json: unknown;
+  try {
+    json = JSON.parse(payload);
+  } catch {
+    return line;
+  }
+  if (!isPlainObject(json)) return line;
+  let changed = false;
+  const out: Record<string, unknown> = { ...json };
+  if (isPlainObject(json.message) && typeof json.message.model === "string") {
+    out.message = { ...json.message, model: clientModel };
+    changed = true;
+  }
+  if (typeof json.model === "string") {
+    out.model = clientModel;
+    changed = true;
+  }
+  if (!changed) return line;
+  return `data: ${JSON.stringify(out)}${newline}`;
+}
+
 /** Riga di preflight da mostrare/loggare prima di inoltrare. Pura. */
 export function formatPreflight(plan: Plan): string {
   const { decision } = plan;

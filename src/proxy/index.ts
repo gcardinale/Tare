@@ -7,6 +7,8 @@ export {
   isStreamingRequest,
   resolveApiKey,
   resolveUpstreamBase,
+  rewriteResponseModel,
+  rewriteSseModelLine,
   toUsage,
   withUpstreamModel,
 } from "./forward.js";

@@ -33,9 +33,15 @@ import {
   isStreamingRequest,
   resolveApiKey,
   resolveUpstreamBase,
+  rewriteResponseModel,
+  rewriteSseModelLine,
   toUsage,
   withUpstreamModel,
 } from "./forward.js";
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return x !== null && typeof x === "object" && !Array.isArray(x);
+}
 
 /** Upstream di default quando un modello non specifica `baseUrl` o per il passthrough. */
 const DEFAULT_UPSTREAM = "https://api.anthropic.com";
@@ -193,6 +199,7 @@ async function relayStreamAndRecord(
   res: ServerResponse,
   upstream: Response,
   chosen: ModelConfig,
+  clientModel: string | undefined,
   log: (m: string) => void,
 ): Promise<void> {
   res.writeHead(upstream.status, relayHeaders(upstream));
@@ -202,16 +209,33 @@ async function relayStreamAndRecord(
   }
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
-  let sse = "";
+  let sse = ""; // accumulo completo per l'usage
+  let pending = ""; // riga SSE non ancora completa (buffer tra i chunk)
+  // Emette le righe complete in `pending`, riscrivendo il model id verso il client.
+  const flushLines = (final: boolean): void => {
+    let idx: number;
+    while ((idx = pending.indexOf("\n")) >= 0) {
+      const line = pending.slice(0, idx + 1);
+      pending = pending.slice(idx + 1);
+      res.write(rewriteSseModelLine(line, clientModel));
+    }
+    if (final && pending !== "") {
+      res.write(rewriteSseModelLine(pending, clientModel));
+      pending = "";
+    }
+  };
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value) {
-        res.write(Buffer.from(value));
-        sse += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        sse += chunk;
+        pending += chunk;
+        flushLines(false);
       }
     }
+    flushLines(true);
     res.end();
   } catch (e) {
     log(`[tare] stream upstream interrotto: ${(e as Error).message}`);
@@ -299,18 +323,26 @@ async function handle(
     return;
   }
 
+  // Model id richiesto dal client: va rimesso nella risposta (trasparenza), così
+  // Claude Code rivede il proprio modello e non lo considera "non accessibile".
+  const clientModel =
+    isPlainObject(body) && typeof body.model === "string" ? body.model : undefined;
+
   if (isStreamingRequest(body)) {
-    await relayStreamAndRecord(res, upstream, chosen, r.log);
+    await relayStreamAndRecord(res, upstream, chosen, clientModel, r.log);
     return;
   }
 
   const text = await upstream.text();
+  let outText = text;
 
   // Consumo reale → ledger PRIMA di rispondere: così la richiesta successiva
   // dell'agente vede già il budget aggiornato (niente race sul ledger). Errori
-  // solo loggati: non devono impedire all'agente di ricevere la risposta.
+  // solo loggati: non devono impedire all'agente di ricevere la risposta. Qui si
+  // riscrive anche il `model` della risposta col model id del client (trasparenza).
   try {
-    const tokens = extractUsageTokens(JSON.parse(text));
+    const json: unknown = JSON.parse(text);
+    const tokens = extractUsageTokens(json);
     if (tokens !== null) {
       const rec = await recordActual(chosen.name, toUsage(chosen, tokens));
       r.log(
@@ -319,14 +351,15 @@ async function handle(
           : `[tare] recordActual fallito: ${rec.error}`,
       );
     }
+    outText = JSON.stringify(rewriteResponseModel(json, clientModel));
   } catch {
-    // risposta non-JSON (es. errore upstream non strutturato): niente da registrare.
+    // risposta non-JSON (es. errore upstream non strutturato): inoltrata invariata.
   }
 
   res.writeHead(upstream.status, {
     "content-type": upstream.headers.get("content-type") ?? "application/json",
   });
-  res.end(text);
+  res.end(outText);
 }
 
 /**
