@@ -1,0 +1,179 @@
+import { describe, it, expect } from "vitest";
+import { parseConfig, DEFAULT_CONFIG_JSONC } from "../src/config/index.js";
+
+const MODELS = `
+  "models": {
+    "opus": { "economy": "subscription_cap", "period": "weekly", "tokenCapacity": 1000000 },
+    "lite": { "economy": "tiered_quota", "period": "monthly", "tokenCapacity": 2000000 },
+    "pay": { "economy": "metered", "currency": "USD", "priceInPerMillion": 0.27, "priceOutPerMillion": 0.41 }
+  }`;
+const POLICY = `
+  "policy": {
+    "singlePassBelowTokens": 15000,
+    "opusMinHeadroomPct": 20,
+    "preferCappedOverMetered": true,
+    "autoPassCostBelow": { "meteredUsd": 0.01 }
+  }`;
+const full = `{ ${MODELS}, ${POLICY} }`;
+
+describe("parseConfig — config valida", () => {
+  it("mappa modelli e policy sui tipi interni", () => {
+    const r = parseConfig(full);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.models.map((m) => m.name)).toEqual(["opus", "lite", "pay"]);
+      const opus = r.value.models[0];
+      expect(opus).toMatchObject({ economy: "subscription_cap", periodTokenCapacity: 1000000 });
+      const pay = r.value.models[2];
+      expect(pay).toMatchObject({
+        economy: "metered",
+        pricePerMillionInput: 0.27,
+        pricePerMillionOutput: 0.41,
+      });
+      expect(r.value.policy).toMatchObject({
+        opusMinHeadroomPct: 20,
+        autoPassCostBelow: { meteredUsd: 0.01 },
+      });
+    }
+  });
+
+  it("accetta commenti e trailing comma (JSONC)", () => {
+    const jsonc = `{
+      // commento
+      "models": { "pay": { "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2, }, },
+      "policy": { "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": false, },
+    }`;
+    expect(parseConfig(jsonc).ok).toBe(true);
+  });
+
+  it("autoPassCostBelow opzionale: assente → policy senza la soglia", () => {
+    const cfg = `{ ${MODELS}, "policy": { "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true } }`;
+    const r = parseConfig(cfg);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.policy.autoPassCostBelow).toBeUndefined();
+  });
+
+  it("autoPassCostBelow vuoto è ammesso (meteredUsd opzionale)", () => {
+    const cfg = `{ ${MODELS}, "policy": { "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "autoPassCostBelow": {} } }`;
+    const r = parseConfig(cfg);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.policy.autoPassCostBelow).toEqual({});
+  });
+
+  it("il template di default supera sempre il parsing", () => {
+    expect(parseConfig(DEFAULT_CONFIG_JSONC).ok).toBe(true);
+  });
+});
+
+describe("parseConfig — errori struttura", () => {
+  it("JSONC malformato → err", () => {
+    expect(parseConfig("{ models: ").ok).toBe(false);
+  });
+
+  it('manca "models" → err', () => {
+    expect(parseConfig(`{ ${POLICY} }`).ok).toBe(false);
+  });
+
+  it('"models" non oggetto → err', () => {
+    expect(parseConfig(`{ "models": [], ${POLICY} }`).ok).toBe(false);
+  });
+
+  it("models vuoto → err", () => {
+    expect(parseConfig(`{ "models": {}, ${POLICY} }`).ok).toBe(false);
+  });
+});
+
+describe("parseConfig — errori modello", () => {
+  const withModel = (def: string): string => `{ "models": { "x": ${def} }, ${POLICY} }`;
+
+  it("definizione non oggetto → err", () => {
+    expect(parseConfig(withModel("42")).ok).toBe(false);
+  });
+  it("economy sconosciuta → err", () => {
+    expect(parseConfig(withModel(`{ "economy": "bitcoin" }`)).ok).toBe(false);
+  });
+  it("metered senza currency → err", () => {
+    expect(
+      parseConfig(
+        withModel(`{ "economy": "metered", "priceInPerMillion": 1, "priceOutPerMillion": 2 }`),
+      ).ok,
+    ).toBe(false);
+  });
+  it("metered con prezzo non numerico → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": "x", "priceOutPerMillion": 2 }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("capped con period errato → err", () => {
+    expect(
+      parseConfig(
+        withModel(`{ "economy": "subscription_cap", "period": "daily", "tokenCapacity": 1 }`),
+      ).ok,
+    ).toBe(false);
+  });
+  it("capped con tokenCapacity <= 0 → err", () => {
+    expect(
+      parseConfig(
+        withModel(`{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 0 }`),
+      ).ok,
+    ).toBe(false);
+  });
+});
+
+describe("parseConfig — errori policy", () => {
+  const withPolicy = (def: string): string => `{ ${MODELS}, "policy": ${def} }`;
+
+  it("policy assente/non oggetto → err", () => {
+    expect(parseConfig(`{ ${MODELS} }`).ok).toBe(false);
+    expect(parseConfig(withPolicy("5")).ok).toBe(false);
+  });
+  it("singlePassBelowTokens non numerico → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": "x", "opusMinHeadroomPct": 1, "preferCappedOverMetered": true }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("opusMinHeadroomPct non numerico → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": "x", "preferCappedOverMetered": true }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("preferCappedOverMetered non booleano → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": "yes" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("autoPassCostBelow non oggetto → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "autoPassCostBelow": 3 }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("autoPassCostBelow.meteredUsd non numerico → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "autoPassCostBelow": { "meteredUsd": "x" } }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+});

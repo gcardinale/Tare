@@ -159,3 +159,14 @@ export interface RouteDecision extends RouteCandidate {
    */
   readonly autoPass: boolean;
 }
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+/**
+ * Configurazione di Tare, già normalizzata sui tipi interni. È il prodotto del
+ * parsing di `~/.tare/config.jsonc`: la lista dei modelli candidati e le regole.
+ */
+export interface TareConfig {
+  readonly models: readonly ModelConfig[];
+  readonly policy: Policy;
+}
