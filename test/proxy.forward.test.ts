@@ -5,6 +5,7 @@ import {
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,
+  joinUpstreamUrl,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,
@@ -46,6 +47,27 @@ describe("resolveUpstreamBase", () => {
   });
   it("fallback se baseUrl assente", () => {
     expect(resolveUpstreamBase(capped, "https://fb")).toBe("https://fb");
+  });
+});
+
+describe("joinUpstreamUrl", () => {
+  it("APPENDE il path al prefisso del baseUrl (non lo sostituisce)", () => {
+    expect(joinUpstreamUrl("https://api.z.ai/api/anthropic", "/v1/messages")).toBe(
+      "https://api.z.ai/api/anthropic/v1/messages",
+    );
+    expect(joinUpstreamUrl("https://api.deepseek.com/anthropic", "/v1/messages")).toBe(
+      "https://api.deepseek.com/anthropic/v1/messages",
+    );
+  });
+  it("baseUrl senza prefisso → path diretto", () => {
+    expect(joinUpstreamUrl("https://api.anthropic.com", "/v1/messages")).toBe(
+      "https://api.anthropic.com/v1/messages",
+    );
+  });
+  it("preserva la query e gestisce la slash finale del baseUrl", () => {
+    expect(joinUpstreamUrl("https://x.com/p/", "/v1/messages?beta=1")).toBe(
+      "https://x.com/p/v1/messages?beta=1",
+    );
   });
 });
 

@@ -31,6 +31,7 @@ import {
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,
+  joinUpstreamUrl,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,
@@ -174,7 +175,7 @@ async function passthrough(
   raw: string,
   log: (m: string) => void,
 ): Promise<void> {
-  const url = new URL(req.url ?? "/", fallbackBaseUrl).toString();
+  const url = joinUpstreamUrl(fallbackBaseUrl, req.url ?? "/");
   const headers = buildForwardHeaders(req.headers, null);
   const init: RequestInit = { method: req.method ?? "GET", headers };
   if (raw !== "" && req.method !== "GET" && req.method !== "HEAD") init.body = raw;
@@ -318,12 +319,12 @@ async function handle(
   const headers = buildForwardHeaders(req.headers, keyR.value, chosen.authStyle);
   headers["content-type"] = "application/json"; // body riserializzato in JSON
   const fwdBody = JSON.stringify(withUpstreamModel(body, chosen));
-  // Ricostruisce l'URL upstream da `req.url`, così path E query (se presenti)
-  // della richiesta originale sono preservati verso il provider.
-  const url = new URL(
-    req.url ?? "/v1/messages",
+  // Append del path della richiesta al baseUrl (preserva eventuali prefissi come
+  // `/api/anthropic` e la query): vedi joinUpstreamUrl.
+  const url = joinUpstreamUrl(
     resolveUpstreamBase(chosen, r.fallbackBaseUrl),
-  ).toString();
+    req.url ?? "/v1/messages",
+  );
 
   let upstream: Response;
   try {

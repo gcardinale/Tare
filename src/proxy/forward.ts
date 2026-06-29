@@ -33,6 +33,22 @@ export function resolveUpstreamBase(model: ModelConfig, fallbackBaseUrl: string)
 }
 
 /**
+ * Compone l'URL upstream APPENDENDO il path della richiesta a quello del baseUrl.
+ * Pura. Necessario perché un baseUrl con prefisso di path (es. `.../api/anthropic`)
+ * con `new URL("/v1/messages", base)` perderebbe il prefisso (un path assoluto lo
+ * sostituisce). Qui invece si concatena: `.../api/anthropic` + `/v1/messages`.
+ * Preserva la query della richiesta.
+ */
+export function joinUpstreamUrl(baseUrl: string, reqUrl: string): string {
+  const base = new URL(baseUrl);
+  const incoming = new URL(reqUrl, "http://placeholder.invalid");
+  const basePath = base.pathname.replace(/\/+$/, ""); // via le slash finali del prefisso
+  base.pathname = basePath + incoming.pathname;
+  base.search = incoming.search;
+  return base.toString();
+}
+
+/**
  * Risolve la chiave API del modello dalla env var nominata in `apiKeyEnv`.
  *  - `apiKeyEnv` assente → `ok(null)`: si inoltra l'header di auth in ingresso.
  *  - `apiKeyEnv` presente ma env var mancante/vuota → `err` (config promette una

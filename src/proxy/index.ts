@@ -5,6 +5,7 @@ export {
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,
+  joinUpstreamUrl,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,
