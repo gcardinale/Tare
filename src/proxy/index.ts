@@ -1,6 +1,7 @@
 export { extractClassifyInput } from "./extract.js";
 export {
   buildForwardHeaders,
+  extractSseUsage,
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildForwardHeaders,
+  extractSseUsage,
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,
@@ -138,6 +139,75 @@ describe("extractUsageTokens", () => {
     expect(extractUsageTokens({})).toBeNull();
     expect(extractUsageTokens(null)).toBeNull();
     expect(extractUsageTokens({ usage: "x" })).toBeNull();
+  });
+});
+
+describe("extractSseUsage", () => {
+  const sse = [
+    `event: message_start`,
+    `data: {"type":"message_start","message":{"id":"m","usage":{"input_tokens":100,"output_tokens":1}}}`,
+    ``,
+    `event: ping`,
+    `data: {"type":"ping"}`,
+    ``,
+    `event: content_block_delta`,
+    `data: {"type":"content_block_delta","delta":{"text":"ciao"}}`,
+    ``,
+    `event: message_delta`,
+    `data: {"type":"message_delta","usage":{"output_tokens":42}}`,
+    ``,
+    `event: message_stop`,
+    `data: {"type":"message_stop"}`,
+    ``,
+  ].join("\n");
+
+  it("input da message_start, output (cumulativo) dall'ultimo message_delta", () => {
+    expect(extractSseUsage(sse)).toEqual({ inputTokens: 100, outputTokens: 42 });
+  });
+
+  it("più message_delta: vince l'ultimo output_tokens", () => {
+    const s = [
+      `data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}`,
+      `data: {"type":"message_delta","usage":{"output_tokens":5}}`,
+      `data: {"type":"message_delta","usage":{"output_tokens":20}}`,
+    ].join("\n");
+    expect(extractSseUsage(s)).toEqual({ inputTokens: 10, outputTokens: 20 });
+  });
+
+  it("ignora righe data non-JSON (ping, [DONE]) e righe non-data", () => {
+    const s = [
+      `: heartbeat`,
+      `data: [DONE]`,
+      `data: non-json`,
+      `data: {"type":"message_start","message":{"usage":{"input_tokens":7}}}`,
+    ].join("\n");
+    expect(extractSseUsage(s)).toEqual({ inputTokens: 7, outputTokens: 0 });
+  });
+
+  it("nessun usage → null", () => {
+    expect(extractSseUsage(`data: {"type":"ping"}\n\n`)).toBeNull();
+    expect(extractSseUsage("")).toBeNull();
+  });
+
+  it("data JSON ma non oggetto (array/numero) è ignorato", () => {
+    const s = [
+      `data: [1,2,3]`,
+      `data: 42`,
+      `data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}`,
+    ].join("\n");
+    expect(extractSseUsage(s)).toEqual({ inputTokens: 5, outputTokens: 0 });
+  });
+
+  it("solo message_delta (nessun message_start) → input 0", () => {
+    expect(extractSseUsage(`data: {"type":"message_delta","usage":{"output_tokens":9}}`)).toEqual({
+      inputTokens: 0,
+      outputTokens: 9,
+    });
+  });
+
+  it("gestisce i CRLF", () => {
+    const s = `data: {"type":"message_start","message":{"usage":{"input_tokens":3}}}\r\ndata: {"type":"message_delta","usage":{"output_tokens":9}}\r\n`;
+    expect(extractSseUsage(s)).toEqual({ inputTokens: 3, outputTokens: 9 });
   });
 });
 

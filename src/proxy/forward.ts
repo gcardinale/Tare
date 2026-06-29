@@ -112,6 +112,46 @@ export function extractUsageTokens(
 }
 
 /**
+ * Estrae i token consumati da uno stream SSE Anthropic (testo accumulato). Pura.
+ * `input_tokens` viene dall'evento `message_start` (`message.usage`); gli
+ * `output_tokens` sono cumulativi negli eventi `message_delta` → vince l'ultimo.
+ * Le righe `data:` non-JSON (ping, `[DONE]`) sono ignorate. `null` se nessun
+ * usage compare (es. stream di errore non strutturato): niente da registrare.
+ */
+export function extractSseUsage(
+  sse: string,
+): { readonly inputTokens: number; readonly outputTokens: number } | null {
+  let input: number | null = null;
+  let output: number | null = null;
+  for (const line of sse.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (payload === "" || payload === "[DONE]") continue;
+    let json: unknown;
+    try {
+      json = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    if (!isPlainObject(json)) continue;
+    if (
+      json.type === "message_start" &&
+      isPlainObject(json.message) &&
+      isPlainObject(json.message.usage)
+    ) {
+      const u = json.message.usage;
+      if (isFiniteNumber(u.input_tokens)) input = u.input_tokens;
+      if (isFiniteNumber(u.output_tokens)) output = u.output_tokens;
+    } else if (json.type === "message_delta" && isPlainObject(json.usage)) {
+      const u = json.usage;
+      if (isFiniteNumber(u.output_tokens)) output = u.output_tokens;
+    }
+  }
+  if (input === null && output === null) return null;
+  return { inputTokens: input ?? 0, outputTokens: output ?? 0 };
+}
+
+/**
  * Costruisce lo `Usage` per `recordActual`. Per i modelli metered calcola il
  * `costCurrency` dai prezzi del modello (la risposta dà i token, non il costo);
  * per capped/tiered bastano i token, che il ledger somma a `used`.

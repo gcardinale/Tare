@@ -2,11 +2,15 @@
  * Proxy interceptor — I/O ai bordi (PROXY-03). M4.
  *
  * Server HTTP su loopback con cui l'agente parla (via `ANTHROPIC_BASE_URL`) al
- * posto del provider. Su `POST /v1/messages` NON-streaming applica il nucleo:
- * estrae il task → `plan()` → logga il preflight → inoltra al `baseUrl`+chiave
- * del modello scelto (routing ENFORCING) → registra il consumo reale dall'`usage`
- * della risposta. Le richieste in streaming e ogni altra rotta vanno in passthrough
- * trasparente all'upstream di fallback (lo streaming SSE "vero" è il prossimo step).
+ * posto del provider. Su `POST /v1/messages` applica il nucleo: estrae il task →
+ * `plan()` → logga il preflight → inoltra al `baseUrl`+chiave del modello scelto
+ * (routing ENFORCING) → registra il consumo reale.
+ *  - Non-streaming: bufferizza la risposta, registra dall'`usage` JSON PRIMA di
+ *    rispondere (la richiesta successiva vede il budget aggiornato).
+ *  - Streaming (SSE): relaya gli eventi al client in tempo reale e in parallelo
+ *    accumula lo stream per estrarne l'`usage` (`message_start`/`message_delta`);
+ *    registra a stream concluso (l'usage si conosce solo alla fine).
+ * Ogni altra rotta va in passthrough trasparente all'upstream di fallback.
  *
  * Filosofia ai bordi: se qualcosa nel routing non torna (config assente, nessun
  * modello idoneo, chiave mancante) NON si blocca l'agente — si logga e si fa
@@ -16,12 +20,14 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import type { ModelConfig } from "../types/index.js";
 import { loadConfig } from "../config/index.js";
 import { loadLedger, recordActual, syncLedger } from "../ledger/index.js";
 import { plan } from "../orchestrator/index.js";
 import { extractClassifyInput } from "./extract.js";
 import {
   buildForwardHeaders,
+  extractSseUsage,
   extractUsageTokens,
   formatPreflight,
   isStreamingRequest,
@@ -176,6 +182,54 @@ async function passthrough(
   }
 }
 
+/**
+ * Relaya una risposta SSE upstream al client in tempo reale e, a stream concluso,
+ * registra il consumo estratto dagli eventi (`message_start`→input, ultimo
+ * `message_delta`→output). Per lo streaming l'usage si conosce solo alla fine,
+ * quindi il record avviene DOPO il relay; `recordActual` è serializzato (R1),
+ * quindi resta consistente anche con richieste concorrenti.
+ */
+async function relayStreamAndRecord(
+  res: ServerResponse,
+  upstream: Response,
+  chosen: ModelConfig,
+  log: (m: string) => void,
+): Promise<void> {
+  res.writeHead(upstream.status, relayHeaders(upstream));
+  if (!upstream.body) {
+    res.end();
+    return;
+  }
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let sse = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        res.write(Buffer.from(value));
+        sse += decoder.decode(value, { stream: true });
+      }
+    }
+    res.end();
+  } catch (e) {
+    log(`[tare] stream upstream interrotto: ${(e as Error).message}`);
+    res.destroy();
+    return;
+  }
+
+  const tokens = extractSseUsage(sse);
+  if (tokens !== null) {
+    const rec = await recordActual(chosen.name, toUsage(chosen, tokens));
+    log(
+      rec.ok
+        ? `[tare] ledger (stream): ${chosen.name} +${tokens.inputTokens}in/${tokens.outputTokens}out tok`
+        : `[tare] recordActual fallito: ${rec.error}`,
+    );
+  }
+}
+
 /** Gestisce una richiesta. Vedi il commento di modulo per la filosofia di fallback. */
 async function handle(
   req: IncomingMessage,
@@ -200,13 +254,7 @@ async function handle(
     return;
   }
 
-  if (isStreamingRequest(body)) {
-    r.log("[tare] richiesta in streaming → passthrough (SSE non instradato nell'MVP)");
-    await passthrough(req, res, fetchImpl, r.fallbackBaseUrl, raw, r.log);
-    return;
-  }
-
-  // ── Routing enforcing ────────────────────────────────────────────────────
+  // ── Routing enforcing (stream e non-stream allo stesso modo) ──────────────
   const fallbackTo = (why: string): Promise<void> => {
     r.log(`[tare] ${why} → passthrough`);
     return passthrough(req, res, fetchImpl, r.fallbackBaseUrl, raw, r.log);
@@ -243,6 +291,11 @@ async function handle(
     upstream = await fetchImpl(url, { method: "POST", headers, body: fwdBody });
   } catch (e) {
     sendJson(res, 502, { error: `upstream non raggiungibile: ${(e as Error).message}` });
+    return;
+  }
+
+  if (isStreamingRequest(body)) {
+    await relayStreamAndRecord(res, upstream, chosen, r.log);
     return;
   }
 

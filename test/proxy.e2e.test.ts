@@ -45,6 +45,26 @@ function urlOf(s: Server): string {
   return `http://127.0.0.1:${a.port}`;
 }
 
+/** `spent` del modello pay, o -1 se non leggibile. */
+async function paySpent(): Promise<number> {
+  const led = await loadLedger();
+  return led.ok && led.value.models.pay?.economy === "metered" ? led.value.models.pay.spent : -1;
+}
+
+/**
+ * Per lo streaming il record sul ledger avviene DOPO la risposta (l'usage si
+ * conosce a fine stream): la consistenza è eventuale. Si fa polling finché il
+ * predicato è vero o scade il timeout.
+ */
+async function pollSpent(pred: (n: number) => boolean, timeoutMs = 2000): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const s = await paySpent();
+    if (pred(s) || Date.now() > deadline) return s;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 let tmp: string;
 let prevTareDir: string | undefined;
 let upstream: Server;
@@ -68,8 +88,31 @@ beforeAll(async () => {
         headers: req.headers,
         body: Buffer.concat(chunks).toString("utf8"),
       };
-      res.writeHead(200, { "content-type": "application/json" });
-      if ((req.url ?? "").startsWith("/v1/messages")) {
+      const wantsStream = (() => {
+        try {
+          return (JSON.parse(captured.body) as { stream?: boolean }).stream === true;
+        } catch {
+          return false;
+        }
+      })();
+      if ((req.url ?? "").startsWith("/v1/messages") && wantsStream) {
+        // Risposta SSE: input nel message_start, output (cumulativo) nel message_delta.
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(
+          [
+            `event: message_start`,
+            `data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":30,"output_tokens":1}}}`,
+            ``,
+            `event: message_delta`,
+            `data: {"type":"message_delta","usage":{"output_tokens":20}}`,
+            ``,
+            `event: message_stop`,
+            `data: {"type":"message_stop"}`,
+            ``,
+          ].join("\n"),
+        );
+      } else if ((req.url ?? "").startsWith("/v1/messages")) {
+        res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             id: "msg_1",
@@ -80,6 +123,7 @@ beforeAll(async () => {
           }),
         );
       } else {
+        res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, path: req.url }));
       }
     });
@@ -144,12 +188,8 @@ describe("proxy e2e — routing enforcing (non-stream)", () => {
     }
   });
 
-  it("streaming → passthrough: inoltra l'auth del client e NON tocca il ledger", async () => {
-    const before = await loadLedger();
-    const spentBefore =
-      before.ok && before.value.models.pay?.economy === "metered"
-        ? before.value.models.pay.spent
-        : -1;
+  it("streaming → instradato: relaya l'SSE e registra l'usage dello stream", async () => {
+    const spentBefore = await paySpent();
 
     const resp = await fetch(`${proxyUrl}/v1/messages`, {
       method: "POST",
@@ -161,15 +201,18 @@ describe("proxy e2e — routing enforcing (non-stream)", () => {
       }),
     });
     expect(resp.status).toBe(200);
-    await resp.text();
+    expect(resp.headers.get("content-type")).toContain("text/event-stream");
+    const text = await resp.text();
+    expect(text).toContain("message_start"); // gli eventi SSE sono arrivati al client
 
-    // Passthrough: l'auth in ingresso è preservata (nessun override di chiave).
-    expect(captured.headers["x-api-key"]).toBe("client-key");
+    // Instradato come il non-stream: chiave del modello e model sostituito.
+    expect(captured.headers["x-api-key"]).toBe("secret");
+    expect((JSON.parse(captured.body) as { model: string }).model).toBe("real-model");
 
-    const after = await loadLedger();
-    const spentAfter =
-      after.ok && after.value.models.pay?.economy === "metered" ? after.value.models.pay.spent : -2;
-    expect(spentAfter).toBe(spentBefore);
+    // Ledger aggiornato (consistenza eventuale) con l'usage SSE: 30/1e6*3 + 20/1e6*15.
+    const streamCost = (30 / 1e6) * PRICE_IN + (20 / 1e6) * PRICE_OUT;
+    const spentAfter = await pollSpent((s) => s > spentBefore + streamCost / 2);
+    expect(spentAfter).toBeCloseTo(spentBefore + streamCost, 9);
   });
 
   it("rotta non /v1/messages → passthrough trasparente", async () => {
