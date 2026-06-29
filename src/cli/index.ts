@@ -15,6 +15,8 @@ import { dirname, join } from "node:path";
 
 import { defaultConfigPath, loadConfig, writeDefaultConfig } from "../config/index.js";
 import { emptyLedger, headrooms, loadLedger, saveLedger, syncLedger } from "../ledger/index.js";
+import { cleanupOrphanTmp, tareDir } from "../paths.io.js";
+import { startProxy } from "../proxy/index.js";
 
 function readVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -40,12 +42,13 @@ Uso:
 Comandi:
   init        Scrive ~/.tare/config.jsonc (usa --force per sovrascrivere)
   status      Mostra il budget residuo (headroom) per modello
-  up          Avvia il proxy interceptor (in arrivo — M4)
+  up          Avvia il proxy interceptor su loopback
 
 Opzioni:
-  -f, --force     init: sovrascrive una config esistente
-  -v, --version   Mostra la versione
-  -h, --help      Mostra questo aiuto
+  -f, --force      init: sovrascrive una config esistente
+  -p, --port <n>   up: porta del proxy (default 3210)
+  -v, --version    Mostra la versione
+  -h, --help       Mostra questo aiuto
 
 Stato: pre-alpha. Cartella di stato: ~/.tare (override: TARE_DIR).`);
 }
@@ -103,6 +106,55 @@ function hasFlag(argv: readonly string[], ...names: string[]): boolean {
   return argv.some((a) => names.includes(a));
 }
 
+/** Valore di un'opzione `--nome valore` (la prima occorrenza), o undefined. */
+function flagValue(argv: readonly string[], ...names: string[]): string | undefined {
+  const i = argv.findIndex((a) => names.includes(a));
+  return i >= 0 ? argv[i + 1] : undefined;
+}
+
+/**
+ * `tare up` — avvia il proxy interceptor su loopback. Carica config+ledger,
+ * sincronizza e persiste il ledger (modelli nuovi/cambiati), ripulisce i .tmp
+ * orfani (D4), poi resta in ascolto finché non si interrompe (Ctrl-C).
+ */
+async function cmdUp(argv: readonly string[]): Promise<number> {
+  const cfg = await loadConfig();
+  if (!cfg.ok) {
+    console.error(`tare: ${cfg.error}`);
+    return 1;
+  }
+  const led = await loadLedger();
+  if (!led.ok) {
+    console.error(`tare: ${led.error}`);
+    return 1;
+  }
+
+  const portArg = flagValue(argv, "--port", "-p");
+  let port = 3210;
+  if (portArg !== undefined) {
+    const n = Number(portArg);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      console.error(`tare: porta non valida "${portArg}" (atteso 1..65535)`);
+      return 1;
+    }
+    port = n;
+  }
+
+  // Allinea e persisti il ledger ai modelli di config prima di servire.
+  await saveLedger(syncLedger(led.value, cfg.value.models));
+
+  const removed = await cleanupOrphanTmp(tareDir());
+  if (removed > 0) console.log(`tare: rimossi ${removed} file .tmp orfani`);
+
+  const { url } = await startProxy({ port });
+  console.log(`tare: proxy in ascolto su ${url}`);
+  console.log(`Punta il tuo agente:  export ANTHROPIC_BASE_URL=${url}`);
+  console.log(`Modelli: ${cfg.value.models.map((m) => m.name).join(", ")}. Ctrl-C per fermare.`);
+
+  // Resta vivo: il server tiene aperto l'event loop, non risolviamo l'exit code.
+  return new Promise<number>(() => {});
+}
+
 /** Ritorna l'exit code. Nessun comando = uso errato (1). */
 async function main(argv: readonly string[]): Promise<number> {
   const cmd = argv[0];
@@ -119,6 +171,8 @@ async function main(argv: readonly string[]): Promise<number> {
       return cmdInit(hasFlag(argv, "--force", "-f"));
     case "status":
       return cmdStatus();
+    case "up":
+      return cmdUp(argv.slice(1));
     case undefined:
       printHelp();
       return 1;
