@@ -157,4 +157,25 @@ describe("syncLedger — allinea ledger ai modelli di config (B1/B4)", () => {
     expect(out.models.opus).toMatchObject({ used: 700_000 }); // intatto
     expect(out.models.pay).toMatchObject({ spent: 0 }); // nuovo
   });
+
+  it("aggiorna cap/period quando la config cambia, preservando used (C1)", () => {
+    const start: Ledger = { models: { opus: capped(1_000_000, 500_000) } };
+    const upgraded = { ...cappedModel, periodTokenCapacity: 2_000_000 } as const;
+    const out = syncLedger(start, [upgraded]);
+    expect(out.models.opus).toMatchObject({ cap: 2_000_000, used: 500_000 });
+  });
+
+  it("riduzione del cap → niente headroom gonfiato (C1: evita overspend)", () => {
+    const start: Ledger = { models: { opus: capped(1_000_000, 500_000) } }; // headroom 50%
+    const downgraded = { ...cappedModel, periodTokenCapacity: 500_000 } as const;
+    const out = syncLedger(start, [downgraded]);
+    expect(headroom(out.models.opus!)).toBe(0); // (500k - 500k)/500k = esaurito
+  });
+
+  it("economia cambiata in config → reinizializza (no carry-over tra economie)", () => {
+    const start: Ledger = { models: { opus: capped(1_000_000, 500_000) } };
+    const nowMetered = { ...meteredModel, name: "opus" } as const;
+    const out = syncLedger(start, [nowMetered]);
+    expect(out.models.opus).toEqual({ economy: "metered", currency: "USD", spent: 0 });
+  });
 });

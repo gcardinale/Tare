@@ -64,6 +64,19 @@ describe("parseConfig — config valida", () => {
     expect(parseConfig(DEFAULT_CONFIG_JSONC).ok).toBe(true);
   });
 
+  it("nomi modello duplicati: vince l'ultimo, una sola entry (C3, documentato)", () => {
+    const cfg = `{ "models": {
+      "opus": { "economy": "subscription_cap", "period": "weekly", "tokenCapacity": 1000000 },
+      "opus": { "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2 }
+    }, ${POLICY} }`;
+    const r = parseConfig(cfg);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.models).toHaveLength(1);
+      expect(r.value.models[0]).toMatchObject({ name: "opus", economy: "metered" });
+    }
+  });
+
   it("autoPassCostBelow: null trattato come assente (B7)", () => {
     const cfg = `{ ${MODELS}, "policy": { "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "autoPassCostBelow": null } }`;
     const r = parseConfig(cfg);

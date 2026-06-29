@@ -39,13 +39,16 @@ const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Num
 function isBudgetState(x: unknown): x is BudgetState {
   if (!isPlainObject(x)) return false;
   if (x.economy === "metered") {
-    return typeof x.currency === "string" && isFiniteNumber(x.spent);
+    return typeof x.currency === "string" && isFiniteNumber(x.spent) && x.spent >= 0;
   }
   if (x.economy === "subscription_cap" || x.economy === "tiered_quota") {
+    // cap > 0 (coerente con la config), used/spent mai negativi (audit D3).
     return (
       (x.period === "weekly" || x.period === "monthly") &&
       isFiniteNumber(x.cap) &&
-      isFiniteNumber(x.used)
+      x.cap > 0 &&
+      isFiniteNumber(x.used) &&
+      x.used >= 0
     );
   }
   return false;

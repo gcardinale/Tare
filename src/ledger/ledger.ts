@@ -97,14 +97,24 @@ export function initialBudgetState(model: ModelConfig): BudgetState {
 }
 
 /**
- * Allinea il ledger ai modelli di config (LDG-08): aggiunge quelli ancora assenti
- * inizializzandoli a consumo zero, preserva gli stati esistenti. Pura. È il ponte
- * config→ledger che evita lo stallo "modello nuovo mai instradabile" (audit B1/B4).
+ * Allinea il ledger ai modelli di config (LDG-08). Pura. È il ponte config→ledger:
+ *  - modello nuovo → inizializzato a consumo zero (evita lo stallo B1/B4);
+ *  - economia cambiata in config → reinizializzato (preservare used/spent tra
+ *    economie diverse non avrebbe senso);
+ *  - capped/tiered esistente → `cap`/`period` allineati alla config (la config è la
+ *    fonte di verità: upgrade/downgrade del piano), preservando `used` (audit C1).
+ *    Senza questo, ridurre il cap lascerebbe un headroom gonfiato → overspend.
+ *  - metered esistente → invariato (preserva `spent`).
  */
 export function syncLedger(ledger: Ledger, models: readonly ModelConfig[]): Ledger {
   const out: Record<string, BudgetState> = { ...ledger.models };
   for (const m of models) {
-    if (out[m.name] === undefined) out[m.name] = initialBudgetState(m);
+    const existing = out[m.name];
+    if (existing === undefined || existing.economy !== m.economy) {
+      out[m.name] = initialBudgetState(m);
+    } else if (existing.economy !== "metered" && m.economy !== "metered") {
+      out[m.name] = { ...existing, period: m.period, cap: m.periodTokenCapacity };
+    }
   }
   return { models: out };
 }

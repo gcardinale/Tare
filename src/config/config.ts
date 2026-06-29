@@ -113,6 +113,9 @@ export function parseConfig(text: string): Result<TareConfig> {
   if (!isPlainObject(parsed) || !isPlainObject(parsed.models)) {
     return err(`config: "models" deve essere un oggetto`);
   }
+  // I nomi dei modelli devono essere UNIVOCI. Con chiavi duplicate, JSON/JSONC
+  // tiene solo l'ultima (RFC 8259): la prima è persa silenziosamente. Comportamento
+  // documentato e fissato da un test; la detection stretta è rimandata (audit C3).
   const entries = Object.entries(parsed.models);
   if (entries.length === 0) return err(`config: serve almeno un modello in "models"`);
 

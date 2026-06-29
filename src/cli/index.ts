@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { defaultConfigPath, loadConfig, writeDefaultConfig } from "../config/index.js";
-import { headrooms, loadLedger, syncLedger } from "../ledger/index.js";
+import { emptyLedger, headrooms, loadLedger, saveLedger, syncLedger } from "../ledger/index.js";
 
 function readVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -50,7 +50,7 @@ Opzioni:
 Stato: pre-alpha. Cartella di stato: ~/.tare (override: TARE_DIR).`);
 }
 
-/** `tare init` — scrive il template di config. */
+/** `tare init` — scrive il template di config e inizializza il ledger se assente. */
 async function cmdInit(force: boolean): Promise<number> {
   const r = await writeDefaultConfig(defaultConfigPath(), force);
   if (!r.ok) {
@@ -58,7 +58,17 @@ async function cmdInit(force: boolean): Promise<number> {
     return 1;
   }
   console.log(`tare: config scritta in ${r.value}`);
-  console.log(`Modificala e poi lancia "tare status".`);
+
+  // Lascia il sistema pronto all'uso: crea il ledger pre-popolato dai modelli di
+  // config (audit C4) SOLO se non esiste già, per non azzerare un budget tracciato.
+  const cfg = await loadConfig();
+  const led = await loadLedger();
+  if (cfg.ok && led.ok && Object.keys(led.value.models).length === 0) {
+    const saved = await saveLedger(syncLedger(emptyLedger(), cfg.value.models));
+    if (saved.ok) console.log(`tare: ledger inizializzato`);
+  }
+
+  console.log(`Modifica la config e poi lancia "tare status".`);
   return 0;
 }
 

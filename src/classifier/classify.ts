@@ -108,7 +108,10 @@ function escapeRegExp(s: string): string {
 function countMatches(haystack: string, terms: readonly string[]): number {
   let n = 0;
   for (const t of terms) {
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(t)}(?![\\p{L}\\p{N}])`, "iu");
+    // Whitespace interno del termine → `\s+`, così doppi spazi/tab/newline nel testo
+    // non rompono i termini multi-parola (es. "più  file", "step\tby\tstep") (C5).
+    const body = escapeRegExp(t).replace(/\s+/g, "\\s+");
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "iu");
     if (re.test(haystack)) n += 1;
   }
   return n;

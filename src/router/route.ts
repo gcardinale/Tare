@@ -122,7 +122,13 @@ export function route(
     classification.tokenBand[1] < policy.singlePassBelowTokens
       ? "single_pass"
       : classification.mode;
-  const effective: Classification = { ...classification, mode };
+  const effective: Classification = {
+    ...classification,
+    mode,
+    // Una passata singola ha 1 step: niente expectedSteps "agentici" residui quando
+    // si forza single_pass, altrimenti il preflight mostrerebbe dati incoerenti (C2).
+    expectedSteps: mode === "single_pass" ? 1 : classification.expectedSteps,
+  };
 
   // Costruisci le candidature idonee.
   const eligible: Ranked[] = models

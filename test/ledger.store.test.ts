@@ -79,6 +79,20 @@ describe("loadLedger", () => {
     expect((await loadLedger(path)).ok).toBe(false);
   });
 
+  it("valori negativi (used/spent) o cap<=0 → err (D3)", async () => {
+    const write = (state: object): Promise<void> =>
+      writeFile(path, JSON.stringify({ models: { m: state } }), "utf8");
+
+    await write({ economy: "subscription_cap", period: "weekly", cap: 1000, used: -5 });
+    expect((await loadLedger(path)).ok).toBe(false);
+
+    await write({ economy: "subscription_cap", period: "weekly", cap: 0, used: 0 });
+    expect((await loadLedger(path)).ok).toBe(false);
+
+    await write({ economy: "metered", currency: "USD", spent: -1 });
+    expect((await loadLedger(path)).ok).toBe(false);
+  });
+
   it("capped valido completo → ok", async () => {
     await writeFile(
       path,

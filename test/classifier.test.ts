@@ -58,6 +58,12 @@ describe("classify — agentic (lavoro esplorativo)", () => {
     expect(c.expectedSteps).toBeGreaterThanOrEqual(3);
   });
 
+  it("un termine multi-parola resta riconosciuto con doppio spazio (C5)", () => {
+    // "più file" è un segnale agentico: deve scattare anche con whitespace irregolare.
+    expect(classify({ task: "lavora su più file" }).mode).toBe("agentic");
+    expect(classify({ task: "lavora su più  file" }).mode).toBe("agentic");
+  });
+
   it("la fascia agentica modella lo snowball (cresce col contesto)", () => {
     const small = classify({
       task: "refactor the auth module across several files",
