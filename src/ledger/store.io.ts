@@ -11,13 +11,44 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { Ledger, Result, Usage } from "../types/index.js";
+import type { BudgetState, Ledger, Result, Usage } from "../types/index.js";
 import { err, ok } from "../types/index.js";
 import { emptyLedger, recordUsage } from "./ledger.js";
 
 /** Percorso di default del ledger: `~/.tare/ledger.json`. */
 export function defaultLedgerPath(): string {
   return join(homedir(), ".tare", "ledger.json");
+}
+
+/**
+ * Oggetto plain (non null, non array). Serve perché `typeof null === "object"` e
+ * `typeof [] === "object"`: senza questo controllo `{ "models": null }` o
+ * `{ "models": [] }` passerebbero per una mappa di modelli valida.
+ */
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return x !== null && typeof x === "object" && !Array.isArray(x);
+}
+
+const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+/**
+ * Valida la forma di UNO stato di budget letto da disco. Il bordo deve garantire
+ * al nucleo puro input ben formati: senza questo, un metered senza `spent`
+ * propagherebbe `NaN` nel budget (spent = undefined + costo).
+ */
+function isBudgetState(x: unknown): x is BudgetState {
+  if (!isPlainObject(x)) return false;
+  if (x.economy === "metered") {
+    return typeof x.currency === "string" && isFiniteNumber(x.spent);
+  }
+  if (x.economy === "subscription_cap" || x.economy === "tiered_quota") {
+    return (
+      (x.period === "weekly" || x.period === "monthly") &&
+      isFiniteNumber(x.cap) &&
+      isFiniteNumber(x.used)
+    );
+  }
+  return false;
 }
 
 /**
@@ -32,15 +63,21 @@ export async function loadLedger(path = defaultLedgerPath()): Promise<Result<Led
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return ok(emptyLedger());
     return err(`lettura ledger fallita (${path}): ${(e as Error).message}`);
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw) as Ledger;
-    if (parsed === null || typeof parsed !== "object" || typeof parsed.models !== "object") {
-      return err(`ledger malformato (${path}): manca "models"`);
-    }
-    return ok(parsed);
+    parsed = JSON.parse(raw);
   } catch (e) {
     return err(`ledger JSON non valido (${path}): ${(e as Error).message}`);
   }
+  if (!isPlainObject(parsed) || !isPlainObject(parsed.models)) {
+    return err(`ledger malformato (${path}): "models" deve essere un oggetto`);
+  }
+  for (const [name, state] of Object.entries(parsed.models)) {
+    if (!isBudgetState(state)) {
+      return err(`ledger malformato (${path}): stato di budget non valido per "${name}"`);
+    }
+  }
+  return ok(parsed as unknown as Ledger);
 }
 
 /**

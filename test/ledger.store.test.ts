@@ -49,6 +49,46 @@ describe("loadLedger", () => {
     const r = await loadLedger(path);
     expect(r.ok).toBe(false);
   });
+
+  // Regressione: validazione di forma al bordo (repro revisione 29/06).
+  it('models null → err (non "ok" che poi fa lanciare il nucleo)', async () => {
+    await writeFile(path, JSON.stringify({ models: null }), "utf8");
+    expect((await loadLedger(path)).ok).toBe(false);
+  });
+
+  it("models array → err (array non è una mappa di modelli)", async () => {
+    await writeFile(path, JSON.stringify({ models: [] }), "utf8");
+    expect((await loadLedger(path)).ok).toBe(false);
+  });
+
+  it("BudgetState interno malformato (metered senza spent) → err, niente NaN", async () => {
+    await writeFile(
+      path,
+      JSON.stringify({ models: { pay: { economy: "metered", currency: "USD" } } }),
+      "utf8",
+    );
+    expect((await loadLedger(path)).ok).toBe(false);
+  });
+
+  it("economy sconosciuta → err", async () => {
+    await writeFile(
+      path,
+      JSON.stringify({ models: { x: { economy: "bitcoin", cap: 1, used: 0 } } }),
+      "utf8",
+    );
+    expect((await loadLedger(path)).ok).toBe(false);
+  });
+
+  it("capped valido completo → ok", async () => {
+    await writeFile(
+      path,
+      JSON.stringify({
+        models: { opus: { economy: "subscription_cap", period: "weekly", cap: 100, used: 10 } },
+      }),
+      "utf8",
+    );
+    expect((await loadLedger(path)).ok).toBe(true);
+  });
 });
 
 describe("saveLedger + loadLedger — round trip", () => {
