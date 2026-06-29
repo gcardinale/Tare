@@ -2,7 +2,7 @@
 
 **[🇬🇧 English](#english) · [🇮🇹 Italiano](#italiano)**
 
-> Status: design spec / pre-alpha. This README is the build brief.
+> Status: pre-alpha, working. The proxy intercepts, routes, and accounts across multiple providers (Anthropic subscription + third-party Anthropic-compatible APIs) with Claude Code today.
 > Working name — the _tare_ is the empty weight a scale measures before you load anything onto it. That's what this tool does: it weighs the cost of a task before you commit to it.
 
 ---
@@ -264,12 +264,31 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
 }
 ```
 
-#### Subscriptions (Pro/Max) and role routing
+#### Subscriptions, third-party providers, roles, modes & manual override
 
-Two things worth calling out, both shown above:
+The pieces shown above, in plain terms:
 
-- **Subscriptions, not just API keys.** A model with **no `apiKeyEnv`** makes Tare forward your incoming auth header untouched — including the OAuth token Claude Code uses for a **Pro/Max plan**. So your subscription is just a `subscription_cap` model with no key, and it can compete head-to-head with metered API models in the same ledger. (Tare doesn't store or manage credentials; it only forwards them.)
-- **A model for reviewing, a model for writing.** Tag models with `roles` and set `roleRouting: "strict"` to **force** review tasks onto your review model and writing tasks onto your write model — two separate budgets that never eat into each other. The role is inferred from the prompt (transparent keywords), and you can override it with an explicit `[review]` / `[write]` tag. A model with no `roles` is a wildcard that catches anything ambiguous.
+- **Subscriptions, not just API keys.** A model with **no `apiKeyEnv`** makes Tare forward your incoming auth header untouched — including the OAuth token Claude Code uses for a **Pro/Max plan**. So your subscription is just a `subscription_cap` model with no key, competing head-to-head with metered API models in the same ledger. (Tare doesn't store or manage credentials; it only forwards them.)
+- **Third-party Anthropic-compatible providers.** Providers like DeepSeek (`https://api.deepseek.com/anthropic`) or Z.ai/GLM (`https://api.z.ai/api/anthropic`) expose Anthropic-compatible endpoints. Point a model's `baseUrl` there, set `apiKeyEnv` + `authStyle: "bearer"` (they authenticate with a Bearer token), and `upstreamModel` to **the provider's own model code** (e.g. `deepseek-v4-pro`, `glm-4.6`). Tare rewrites the request's model to that code on the way out, and **rewrites it back to your model on the way in**, so Claude Code stays happy.
+- **A model for reviewing, a model for writing.** Tag models with `roles` and set `roleRouting: "strict"` to **force** review tasks onto your review model and writing tasks onto your write model — two separate budgets. The role is inferred from the prompt (transparent keywords) and overridable with an explicit `[review]` / `[write]` tag. A model with no `roles` is a wildcard.
+- **Limit a model to one mode.** `modes: ["single_pass"]` caps a small-quota model (e.g. a "Lite" plan) to single-pass work so an expensive agentic loop never drains it; `["agentic"]` reserves a model for the heavy stuff.
+
+#### Forcing a model on the fly
+
+Sometimes you just want _this_ model, now — without restarting your agent:
+
+- **Per request:** put `[model:NAME]` in your prompt (e.g. `[model:claude] do this`). That one request goes to that model, overriding routing, budget and mode.
+- **Persistently:** run `tare use <name>` from another terminal; every request is pinned to that model until you run `tare auto`. The running proxy picks it up on the next request — no restart of the proxy or of your agent.
+
+### Commands
+
+```bash
+tare init             # write ~/.tare/config.jsonc (and initialize the ledger)
+tare up               # start the proxy on 127.0.0.1:3210 (--port to change)
+tare status           # show remaining headroom per model (and any forced model)
+tare use <model>      # force all requests onto <model> (no restart)
+tare auto             # back to automatic routing
+```
 
 ### What Tare is _not_ (and how it differs)
 
@@ -573,12 +592,31 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
 }
 ```
 
-#### Abbonamenti (Pro/Max) e routing per ruolo
+#### Abbonamenti, provider di terze parti, ruoli, modalità e override manuale
 
-Due cose da evidenziare, entrambe nell'esempio sopra:
+I pezzi mostrati sopra, in parole semplici:
 
-- **Abbonamenti, non solo chiavi API.** Un modello **senza `apiKeyEnv`** fa sì che Tare inoltri l'header di auth in ingresso così com'è — incluso il token OAuth che Claude Code usa per un **piano Pro/Max**. Quindi il tuo abbonamento è semplicemente un modello `subscription_cap` senza chiave, e può **concorrere alla pari** con i modelli a consumo nello stesso ledger. (Tare non conserva né gestisce credenziali: le inoltra soltanto.)
-- **Un modello per le review, uno per la scrittura.** Etichetta i modelli con `roles` e imposta `roleRouting: "strict"` per **forzare** i task di review sul modello-review e quelli di scrittura sul modello-write — due budget separati che non si mangiano a vicenda. Il ruolo è dedotto dal prompt (keyword trasparenti) e puoi forzarlo con un tag esplicito `[review]` / `[write]`. Un modello senza `roles` è un jolly che cattura i task ambigui.
+- **Abbonamenti, non solo chiavi API.** Un modello **senza `apiKeyEnv`** fa sì che Tare inoltri l'header di auth in ingresso così com'è — incluso il token OAuth che Claude Code usa per un **piano Pro/Max**. Quindi il tuo abbonamento è un modello `subscription_cap` senza chiave, che **concorre alla pari** con i modelli a consumo nello stesso ledger. (Tare non conserva né gestisce credenziali: le inoltra soltanto.)
+- **Provider di terze parti Anthropic-compatible.** Provider come DeepSeek (`https://api.deepseek.com/anthropic`) o Z.ai/GLM (`https://api.z.ai/api/anthropic`) espongono endpoint compatibili col formato Anthropic. Punta il `baseUrl` del modello lì, imposta `apiKeyEnv` + `authStyle: "bearer"` (autenticano con un token Bearer) e `upstreamModel` col **codice modello del provider** (es. `deepseek-v4-pro`, `glm-4.6`). Tare riscrive il modello in uscita con quel codice e lo **riscrive di nuovo nella risposta** col tuo modello, così Claude Code è contento.
+- **Un modello per le review, uno per la scrittura.** Etichetta i modelli con `roles` e imposta `roleRouting: "strict"` per **forzare** i task di review sul modello-review e quelli di scrittura sul modello-write — due budget separati. Il ruolo è dedotto dal prompt (keyword trasparenti) e forzabile col tag `[review]` / `[write]`. Un modello senza `roles` è un jolly.
+- **Limita un modello a una modalità.** `modes: ["single_pass"]` vincola un modello a quota piccola (es. piano "Lite") al solo lavoro single-pass, così un loop agentico costoso non lo prosciuga; `["agentic"]` riserva un modello al lavoro pesante.
+
+#### Forzare un modello al volo
+
+A volte vuoi semplicemente _quel_ modello, adesso — senza riavviare l'agente:
+
+- **Per richiesta:** scrivi `[model:NOME]` nel prompt (es. `[model:claude] fai questo`). Quella richiesta va su quel modello, scavalcando routing, budget e modalità.
+- **In modo persistente:** lancia `tare use <nome>` da un altro terminale; tutte le richieste sono fissate su quel modello finché non fai `tare auto`. Il proxy in esecuzione lo applica dalla richiesta successiva — nessun riavvio del proxy né dell'agente.
+
+### Comandi
+
+```bash
+tare init             # scrive ~/.tare/config.jsonc (e inizializza il ledger)
+tare up               # avvia il proxy su 127.0.0.1:3210 (--port per cambiarla)
+tare status           # headroom residuo per modello (e l'eventuale modello forzato)
+tare use <modello>    # forza tutte le richieste su <modello> (senza riavvio)
+tare auto             # torna al routing automatico
+```
 
 ### Cosa Tare _non_ è (e in cosa si distingue)
 
