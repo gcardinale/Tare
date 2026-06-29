@@ -8,16 +8,16 @@
  */
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { BudgetState, Ledger, Result, Usage } from "../types/index.js";
 import { err, ok } from "../types/index.js";
+import { tareDir } from "../paths.io.js";
 import { emptyLedger, recordUsage } from "./ledger.js";
 
-/** Percorso di default del ledger: `~/.tare/ledger.json`. */
+/** Percorso di default del ledger: `<TARE_DIR>/ledger.json` (default `~/.tare`). */
 export function defaultLedgerPath(): string {
-  return join(homedir(), ".tare", "ledger.json");
+  return join(tareDir(), "ledger.json");
 }
 
 /**

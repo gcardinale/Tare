@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /**
- * Tare CLI — entry point (stub).
+ * Tare CLI — entry point (M3).
  *
- * I comandi reali (`tare up` / `tare init` / `tare status`) arrivano in M3:
- * vedi `features/cli/tasks.md` (CLI-04..08). Per ora questo stub esiste per dare
- * a build/dev/`npm i -g` un entry coerente (risolve F-01 dell'audit 28/06).
+ * Comandi reali su config + ledger:
+ *   tare init     scrive ~/.tare/config.jsonc (template)
+ *   tare status   mostra l'headroom residuo per modello
+ * `tare up` (proxy interceptor) arriva in M4. La cartella di stato è `~/.tare`,
+ * sovrascrivibile con `TARE_DIR`. Questo file è I/O ai bordi: nessuna logica
+ * pura qui (vive nei moduli config/ledger/orchestrator, già testati).
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+import { defaultConfigPath, loadConfig, writeDefaultConfig } from "../config/index.js";
+import { headrooms, loadLedger, syncLedger } from "../ledger/index.js";
 
 function readVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -31,35 +37,90 @@ function printHelp(): void {
 Uso:
   tare <comando> [opzioni]
 
-Comandi (in arrivo — M3):
-  init      Scrive ~/.tare/config.jsonc
-  up        Avvia proxy + ledger + classifier locale
-  status    Mostra il budget residuo per economia
+Comandi:
+  init        Scrive ~/.tare/config.jsonc (usa --force per sovrascrivere)
+  status      Mostra il budget residuo (headroom) per modello
+  up          Avvia il proxy interceptor (in arrivo — M4)
 
 Opzioni:
+  -f, --force     init: sovrascrive una config esistente
   -v, --version   Mostra la versione
   -h, --help      Mostra questo aiuto
 
-Stato: pre-alpha. I comandi non sono ancora implementati.`);
+Stato: pre-alpha. Cartella di stato: ~/.tare (override: TARE_DIR).`);
 }
 
-/** Ritorna l'exit code; nessun comando = uso errato (1). */
-function main(argv: readonly string[]): number {
-  const cmd = argv[0];
-  if (cmd === "--version" || cmd === "-v") {
-    console.log(readVersion());
-    return 0;
-  }
-  if (cmd === "--help" || cmd === "-h") {
-    printHelp();
-    return 0;
-  }
-  if (cmd === undefined) {
-    printHelp();
+/** `tare init` — scrive il template di config. */
+async function cmdInit(force: boolean): Promise<number> {
+  const r = await writeDefaultConfig(defaultConfigPath(), force);
+  if (!r.ok) {
+    console.error(`tare: ${r.error}`);
     return 1;
   }
-  console.error(`tare: comando sconosciuto "${cmd}". Prova "tare --help".`);
-  return 1;
+  console.log(`tare: config scritta in ${r.value}`);
+  console.log(`Modificala e poi lancia "tare status".`);
+  return 0;
 }
 
-process.exit(main(process.argv.slice(2)));
+/** `tare status` — headroom residuo per modello, leggendo config + ledger. */
+async function cmdStatus(): Promise<number> {
+  const cfg = await loadConfig();
+  if (!cfg.ok) {
+    console.error(`tare: ${cfg.error}`);
+    return 1;
+  }
+  const led = await loadLedger();
+  if (!led.ok) {
+    console.error(`tare: ${led.error}`);
+    return 1;
+  }
+
+  // Allinea il ledger ai modelli di config (modelli nuovi → budget pieno).
+  const hr = headrooms(syncLedger(led.value, cfg.value.models));
+
+  console.log(`Budget Tare — headroom residuo per modello:\n`);
+  for (const m of cfg.value.models) {
+    const pct = Math.round((hr[m.name] ?? 0) * 100);
+    const note = m.economy === "metered" ? "  (a consumo, nessun tetto)" : "";
+    console.log(
+      `  ${m.name.padEnd(12)} ${m.economy.padEnd(18)} ${String(pct).padStart(3)}%${note}`,
+    );
+  }
+  return 0;
+}
+
+function hasFlag(argv: readonly string[], ...names: string[]): boolean {
+  return argv.some((a) => names.includes(a));
+}
+
+/** Ritorna l'exit code. Nessun comando = uso errato (1). */
+async function main(argv: readonly string[]): Promise<number> {
+  const cmd = argv[0];
+  switch (cmd) {
+    case "--version":
+    case "-v":
+      console.log(readVersion());
+      return 0;
+    case "--help":
+    case "-h":
+      printHelp();
+      return 0;
+    case "init":
+      return cmdInit(hasFlag(argv, "--force", "-f"));
+    case "status":
+      return cmdStatus();
+    case undefined:
+      printHelp();
+      return 1;
+    default:
+      console.error(`tare: comando sconosciuto "${cmd}". Prova "tare --help".`);
+      return 1;
+  }
+}
+
+main(process.argv.slice(2))
+  .then((code) => process.exit(code))
+  .catch((e: unknown) => {
+    console.error(`tare: errore inatteso: ${(e as Error).message}`);
+    process.exit(1);
+  });

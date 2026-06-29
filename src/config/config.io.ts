@@ -7,16 +7,16 @@
  */
 
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { Result, TareConfig } from "../types/index.js";
 import { err, ok } from "../types/index.js";
+import { tareDir } from "../paths.io.js";
 import { DEFAULT_CONFIG_JSONC, parseConfig } from "./config.js";
 
-/** Percorso di default della config: `~/.tare/config.jsonc`. */
+/** Percorso di default della config: `<TARE_DIR>/config.jsonc` (default `~/.tare`). */
 export function defaultConfigPath(): string {
-  return join(homedir(), ".tare", "config.jsonc");
+  return join(tareDir(), "config.jsonc");
 }
 
 /**
