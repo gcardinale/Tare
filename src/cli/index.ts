@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 
 import { defaultConfigPath, loadConfig, writeDefaultConfig } from "../config/index.js";
 import { emptyLedger, headrooms, loadLedger, saveLedger, syncLedger } from "../ledger/index.js";
-import { cleanupOrphanTmp, tareDir } from "../paths.io.js";
+import { cleanupOrphanTmp, clearPin, readPin, tareDir, writePin } from "../paths.io.js";
 import { startProxy } from "../proxy/index.js";
 
 function readVersion(): string {
@@ -40,15 +40,20 @@ Uso:
   tare <comando> [opzioni]
 
 Comandi:
-  init        Scrive ~/.tare/config.jsonc (usa --force per sovrascrivere)
-  status      Mostra il budget residuo (headroom) per modello
-  up          Avvia il proxy interceptor su loopback
+  init          Scrive ~/.tare/config.jsonc (usa --force per sovrascrivere)
+  status        Mostra il budget residuo (headroom) per modello
+  up            Avvia il proxy interceptor su loopback
+  use <modello> Forza tutte le richieste su un modello (no riavvio)
+  auto          Ripristina il routing automatico (rimuove il forzamento)
 
 Opzioni:
   -f, --force      init: sovrascrive una config esistente
   -p, --port <n>   up: porta del proxy (default 3210)
   -v, --version    Mostra la versione
   -h, --help       Mostra questo aiuto
+
+Suggerimento: puoi anche forzare una SINGOLA richiesta scrivendo nel prompt un tag
+[model:nome] (es. "[model:claude] fai questo"). Ha priorità sul forzamento globale.
 
 Stato: pre-alpha. Cartella di stato: ~/.tare (override: TARE_DIR).`);
 }
@@ -91,6 +96,12 @@ async function cmdStatus(): Promise<number> {
   // Allinea il ledger ai modelli di config (modelli nuovi → budget pieno).
   const hr = headrooms(syncLedger(led.value, cfg.value.models));
 
+  const pin = await readPin();
+  console.log(
+    pin !== null
+      ? `Routing: FORZATO su "${pin}" (ripristina con: tare auto)\n`
+      : `Routing: automatico\n`,
+  );
   console.log(`Budget Tare — headroom residuo per modello:\n`);
   for (const m of cfg.value.models) {
     const pct = Math.round((hr[m.name] ?? 0) * 100);
@@ -99,6 +110,35 @@ async function cmdStatus(): Promise<number> {
       `  ${m.name.padEnd(12)} ${m.economy.padEnd(18)} ${String(pct).padStart(3)}%${note}`,
     );
   }
+  return 0;
+}
+
+/** `tare use <modello>` — forza tutte le richieste su un modello (pin persistente). */
+async function cmdUse(name: string | undefined): Promise<number> {
+  if (name === undefined || name.startsWith("-")) {
+    console.error(`tare: uso: tare use <modello>`);
+    return 1;
+  }
+  const cfg = await loadConfig();
+  if (!cfg.ok) {
+    console.error(`tare: ${cfg.error}`);
+    return 1;
+  }
+  if (!cfg.value.models.some((m) => m.name === name)) {
+    const names = cfg.value.models.map((m) => m.name).join(", ");
+    console.error(`tare: modello sconosciuto "${name}". Disponibili: ${names}`);
+    return 1;
+  }
+  await writePin(name);
+  console.log(`tare: routing forzato su "${name}". Ripristina con: tare auto`);
+  console.log(`(Il proxy in esecuzione lo applica dalla prossima richiesta, senza riavvii.)`);
+  return 0;
+}
+
+/** `tare auto` — rimuove il forzamento, torna al routing automatico. */
+async function cmdAuto(): Promise<number> {
+  await clearPin();
+  console.log(`tare: routing automatico ripristinato.`);
   return 0;
 }
 
@@ -173,6 +213,10 @@ async function main(argv: readonly string[]): Promise<number> {
       return cmdStatus();
     case "up":
       return cmdUp(argv.slice(1));
+    case "use":
+      return cmdUse(argv[1]);
+    case "auto":
+      return cmdAuto();
     case undefined:
       printHelp();
       return 1;

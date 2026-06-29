@@ -6,6 +6,7 @@ import {
   formatPreflight,
   isStreamingRequest,
   joinUpstreamUrl,
+  parseForcedModel,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,
@@ -47,6 +48,23 @@ describe("resolveUpstreamBase", () => {
   });
   it("fallback se baseUrl assente", () => {
     expect(resolveUpstreamBase(capped, "https://fb")).toBe("https://fb");
+  });
+});
+
+describe("parseForcedModel", () => {
+  it("estrae il nome da [model:nome]", () => {
+    expect(parseForcedModel("[model:glm] fai questo")).toBe("glm");
+    expect(parseForcedModel("usa [model:deepseek] qui")).toBe("deepseek");
+  });
+  it("tollera spazi e maiuscole nel tag", () => {
+    expect(parseForcedModel("[ MODEL : claude ] ciao")).toBe("claude");
+  });
+  it("accetta nomi con punti/trattini/underscore", () => {
+    expect(parseForcedModel("[model:glm-4.6_lite]")).toBe("glm-4.6_lite");
+  });
+  it("nessun tag → null", () => {
+    expect(parseForcedModel("fai qualcosa senza tag")).toBeNull();
+    expect(parseForcedModel("[model:]")).toBeNull();
   });
 });
 

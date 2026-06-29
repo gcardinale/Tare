@@ -6,6 +6,7 @@ export {
   formatPreflight,
   isStreamingRequest,
   joinUpstreamUrl,
+  parseForcedModel,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,

@@ -27,6 +27,16 @@ export function isStreamingRequest(body: unknown): boolean {
   return isPlainObject(body) && body.stream === true;
 }
 
+/**
+ * Override esplicito del modello dal prompt: `[model:nome]`. Pura. Ritorna il nome
+ * del modello (di config) o null. Permette di forzare un modello per la SINGOLA
+ * richiesta senza riavviare nulla; ha priorità sul routing automatico e sul pin.
+ */
+export function parseForcedModel(task: string): string | null {
+  const m = /\[\s*model\s*:\s*([A-Za-z0-9._-]+)\s*\]/i.exec(task);
+  return m ? m[1]! : null;
+}
+
 /** Base URL upstream del modello scelto, o il fallback se il modello non la specifica. */
 export function resolveUpstreamBase(model: ModelConfig, fallbackBaseUrl: string): string {
   return model.baseUrl ?? fallbackBaseUrl;

@@ -24,6 +24,7 @@ import type { ModelConfig } from "../types/index.js";
 import { loadConfig } from "../config/index.js";
 import { loadLedger, recordActual, syncLedger } from "../ledger/index.js";
 import { plan } from "../orchestrator/index.js";
+import { readPin } from "../paths.io.js";
 import { extractClassifyInput } from "./extract.js";
 import {
   buildForwardHeaders,
@@ -32,6 +33,7 @@ import {
   formatPreflight,
   isStreamingRequest,
   joinUpstreamUrl,
+  parseForcedModel,
   resolveApiKey,
   resolveUpstreamBase,
   rewriteResponseModel,
@@ -301,17 +303,28 @@ async function handle(
   const cfg = await loadConfig();
   if (!cfg.ok) return fallbackTo(`config non caricata: ${cfg.error}`);
 
-  const led = await loadLedger();
-  if (!led.ok) return fallbackTo(`ledger non caricato: ${led.error}`);
+  // Override forzato: tag `[model:nome]` nel prompt (per richiesta) o pin persistente
+  // (`tare use <nome>`). Bypassa budget/modalità/ruolo: "usa questo, punto". Se il
+  // nome non è in config, si ignora e si torna al routing automatico.
+  const forcedName = parseForcedModel(input.value.task) ?? (await readPin());
+  let chosen =
+    forcedName !== null ? cfg.value.models.find((m) => m.name === forcedName) : undefined;
+  if (forcedName !== null && chosen === undefined) {
+    r.log(`[tare] modello forzato "${forcedName}" assente dalla config → routing automatico`);
+  }
 
-  const synced = syncLedger(led.value, cfg.value.models);
-  const planned = plan(input.value, cfg.value, synced);
-  if (!planned.ok) return fallbackTo(`nessun modello idoneo: ${planned.error}`);
-
-  const chosen = cfg.value.models.find((m) => m.name === planned.value.decision.model);
-  if (chosen === undefined) return fallbackTo(`modello scelto assente dalla config`);
-
-  r.log(formatPreflight(planned.value));
+  if (chosen !== undefined) {
+    r.log(`[tare] forzato su ${chosen.name}`);
+  } else {
+    const led = await loadLedger();
+    if (!led.ok) return fallbackTo(`ledger non caricato: ${led.error}`);
+    const synced = syncLedger(led.value, cfg.value.models);
+    const planned = plan(input.value, cfg.value, synced);
+    if (!planned.ok) return fallbackTo(`nessun modello idoneo: ${planned.error}`);
+    chosen = cfg.value.models.find((m) => m.name === planned.value.decision.model);
+    if (chosen === undefined) return fallbackTo(`modello scelto assente dalla config`);
+    r.log(formatPreflight(planned.value));
+  }
 
   const keyR = resolveApiKey(chosen, r.env);
   if (!keyR.ok) return fallbackTo(keyR.error);

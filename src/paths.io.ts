@@ -5,13 +5,46 @@
  * la sovrascrive: utile per test isolati e per chi tiene lo stato altrove.
  */
 
-import { readdir, unlink } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /** La cartella di stato di Tare: `$TARE_DIR` se impostata, altrimenti `~/.tare`. */
 export function tareDir(): string {
   return process.env.TARE_DIR ?? join(homedir(), ".tare");
+}
+
+/** File del "pin": il modello forzato per tutte le richieste (vuoto/assente = auto). */
+export function pinPath(dir = tareDir()): string {
+  return join(dir, "pin");
+}
+
+/**
+ * Modello forzato dal pin, o null se assente/vuoto. Resiliente: qualsiasi errore
+ * di lettura → null (un pin illeggibile non deve rompere l'instradamento).
+ */
+export async function readPin(path = pinPath()): Promise<string | null> {
+  try {
+    const s = (await readFile(path, "utf8")).trim();
+    return s === "" ? null : s;
+  } catch {
+    return null;
+  }
+}
+
+/** Scrive il pin (modello forzato). Crea la cartella se manca. */
+export async function writePin(name: string, path = pinPath()): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, name, "utf8");
+}
+
+/** Rimuove il pin (ripristina il routing automatico). Assente = no-op. */
+export async function clearPin(path = pinPath()): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
 }
 
 /**
