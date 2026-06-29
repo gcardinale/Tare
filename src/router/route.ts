@@ -38,9 +38,11 @@ type Economy = ModelConfig["economy"];
 /** Headroom residuo (0..1) di un modello secondo il ledger. */
 function headroomOf(ledger: Ledger, model: ModelConfig): number {
   const state = ledger.models[model.name];
-  // Modello non ancora tracciato: il metered non ha tetto (1), un piano a
-  // tetto/quota senza stato noto non è instradabile con onestà (0).
-  if (state === undefined) return model.economy === "metered" ? 1 : 0;
+  // Modello non ancora tracciato = nessun consumo registrato = budget pieno (1).
+  // Tornare 0 lo escluderebbe per sempre (audit B1): l'unico ingresso nel ledger è
+  // recordActual, che però esige il modello già presente. `syncLedger` pre-popola
+  // il ledger dai modelli di config all'avvio; questo è la rete di sicurezza.
+  if (state === undefined) return 1;
   return headroom(state);
 }
 
@@ -88,14 +90,19 @@ function compare(a: Ranked, b: Ranked, policy: Policy): number {
   return 0;
 }
 
+// Etichetta dell'unità: un % di un tetto abbonamento e un % di una quota a livelli
+// pesano in modo diverso per l'utente, quindi vanno distinti nel preflight (audit B5).
+const PCT_SUFFIX: Record<"pct_cap" | "pct_quota", string> = {
+  pct_cap: "% cap",
+  pct_quota: "% quota",
+};
+
 function describe(c: RouteCandidate, autoPass: boolean): string {
-  const u = c.estimate.unit === "currency" ? "$" : "%";
+  const e = c.estimate;
   const range =
-    c.estimate.unit === "currency"
-      ? `${u}${c.estimate.low}–${u}${c.estimate.high}`
-      : `${c.estimate.low}–${c.estimate.high}${u}`;
+    e.unit === "currency" ? `$${e.low}–$${e.high}` : `${e.low}–${e.high}${PCT_SUFFIX[e.unit]}`;
   const tail = autoPass ? " · economico: auto-pass" : "";
-  return `${c.mode} su ${c.model}: ~${range} (conf. ${c.estimate.confidence})${tail}`;
+  return `${c.mode} su ${c.model}: ~${range} (conf. ${e.confidence})${tail}`;
 }
 
 /**

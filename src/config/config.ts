@@ -32,8 +32,13 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
 
   if (def.economy === "metered") {
     if (typeof def.currency !== "string") return err(`modello "${name}": "currency" mancante`);
-    if (!isFiniteNumber(def.priceInPerMillion) || !isFiniteNumber(def.priceOutPerMillion)) {
-      return err(`modello "${name}": "priceInPerMillion"/"priceOutPerMillion" non validi`);
+    if (
+      !isFiniteNumber(def.priceInPerMillion) ||
+      def.priceInPerMillion <= 0 ||
+      !isFiniteNumber(def.priceOutPerMillion) ||
+      def.priceOutPerMillion <= 0
+    ) {
+      return err(`modello "${name}": "priceInPerMillion"/"priceOutPerMillion" devono essere > 0`);
     }
     return ok({
       name,
@@ -65,9 +70,16 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
 /** Normalizza la sezione `policy`. */
 function toPolicy(x: unknown): Result<Policy> {
   if (!isPlainObject(x)) return err(`"policy": oggetto mancante`);
-  if (!isFiniteNumber(x.singlePassBelowTokens))
-    return err(`"policy.singlePassBelowTokens" non valido`);
-  if (!isFiniteNumber(x.opusMinHeadroomPct)) return err(`"policy.opusMinHeadroomPct" non valido`);
+  if (!isFiniteNumber(x.singlePassBelowTokens) || x.singlePassBelowTokens < 0) {
+    return err(`"policy.singlePassBelowTokens" deve essere un numero >= 0`);
+  }
+  if (
+    !isFiniteNumber(x.opusMinHeadroomPct) ||
+    x.opusMinHeadroomPct < 0 ||
+    x.opusMinHeadroomPct > 100
+  ) {
+    return err(`"policy.opusMinHeadroomPct" deve essere in 0..100`);
+  }
   if (typeof x.preferCappedOverMetered !== "boolean") {
     return err(`"policy.preferCappedOverMetered" deve essere booleano`);
   }
@@ -78,7 +90,8 @@ function toPolicy(x: unknown): Result<Policy> {
     preferCappedOverMetered: x.preferCappedOverMetered,
   };
 
-  if (x.autoPassCostBelow === undefined) return ok(base);
+  // `null` (comune in JSON per "nessun valore") è trattato come assente (audit B7).
+  if (x.autoPassCostBelow === undefined || x.autoPassCostBelow === null) return ok(base);
   if (!isPlainObject(x.autoPassCostBelow)) return err(`"policy.autoPassCostBelow" non valido`);
   const m = x.autoPassCostBelow.meteredUsd;
   if (m !== undefined && !isFiniteNumber(m))

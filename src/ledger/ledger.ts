@@ -19,7 +19,7 @@
  *    deduce dai token senza prezzo: è dominio di estimator/config).
  */
 
-import type { BudgetState, Ledger, Result, Usage } from "../types/index.js";
+import type { BudgetState, Ledger, ModelConfig, Result, Usage } from "../types/index.js";
 import { err, ok } from "../types/index.js";
 
 function clamp01(value: number): number {
@@ -77,4 +77,34 @@ export function recordUsage(ledger: Ledger, model: string, usage: Usage): Result
   return ok({
     models: { ...ledger.models, [model]: applyUsage(current, usage) },
   });
+}
+
+/**
+ * Stato di budget iniziale di un modello: nessun consumo ancora. Per capped/tiered
+ * il tetto è `periodTokenCapacity` (così headroom e stima usano la STESSA scala in
+ * token); per il metered si parte da `spent: 0`.
+ */
+export function initialBudgetState(model: ModelConfig): BudgetState {
+  if (model.economy === "metered") {
+    return { economy: "metered", currency: model.currency, spent: 0 };
+  }
+  return {
+    economy: model.economy,
+    period: model.period,
+    cap: model.periodTokenCapacity,
+    used: 0,
+  };
+}
+
+/**
+ * Allinea il ledger ai modelli di config (LDG-08): aggiunge quelli ancora assenti
+ * inizializzandoli a consumo zero, preserva gli stati esistenti. Pura. È il ponte
+ * config→ledger che evita lo stallo "modello nuovo mai instradabile" (audit B1/B4).
+ */
+export function syncLedger(ledger: Ledger, models: readonly ModelConfig[]): Ledger {
+  const out: Record<string, BudgetState> = { ...ledger.models };
+  for (const m of models) {
+    if (out[m.name] === undefined) out[m.name] = initialBudgetState(m);
+  }
+  return { models: out };
 }

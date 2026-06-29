@@ -6,7 +6,7 @@
  * testato comunque su tmp.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -36,9 +36,20 @@ export async function loadConfig(path = defaultConfigPath()): Promise<Result<Tar
   return parseConfig(raw);
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw e;
+  }
+}
+
 /**
- * Scrive il template di default (`tare init`). Per sicurezza NON sovrascrive una
- * config esistente a meno di `overwrite: true` (flag `wx` = fallisce se esiste).
+ * Scrive il template di default (`tare init`). NON sovrascrive una config esistente
+ * a meno di `overwrite: true`. Scrittura ATOMICA (tmp + rename), simmetrica con
+ * `saveLedger`: un crash a metà non lascia mai una config troncata (audit B6).
  * Ritorna il percorso scritto.
  */
 export async function writeDefaultConfig(
@@ -46,13 +57,15 @@ export async function writeDefaultConfig(
   overwrite = false,
 ): Promise<Result<string>> {
   try {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, DEFAULT_CONFIG_JSONC, { encoding: "utf8", flag: overwrite ? "w" : "wx" });
-    return ok(path);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+    if (!overwrite && (await exists(path))) {
       return err(`config già esistente: ${path} (usa overwrite per rigenerarla)`);
     }
+    await mkdir(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile(tmp, DEFAULT_CONFIG_JSONC, "utf8");
+    await rename(tmp, path);
+    return ok(path);
+  } catch (e) {
     return err(`scrittura config fallita (${path}): ${(e as Error).message}`);
   }
 }

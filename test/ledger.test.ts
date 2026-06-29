@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { applyUsage, emptyLedger, headroom, headrooms, recordUsage } from "../src/ledger/index.js";
-import type { Ledger, Usage } from "../src/types/index.js";
+import {
+  applyUsage,
+  emptyLedger,
+  headroom,
+  headrooms,
+  initialBudgetState,
+  recordUsage,
+  syncLedger,
+} from "../src/ledger/index.js";
+import type { Ledger, ModelConfig, Usage } from "../src/types/index.js";
 
 const capped = (cap: number, used: number) =>
   ({ economy: "subscription_cap", period: "weekly", cap, used }) as const;
@@ -98,5 +106,55 @@ describe("recordUsage — aggiornamento puro del ledger", () => {
     const r = recordUsage(ledger, "fantasma", tokens(1, 1));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("fantasma");
+  });
+});
+
+const cappedModel: ModelConfig = {
+  name: "opus",
+  economy: "subscription_cap",
+  period: "weekly",
+  periodTokenCapacity: 1_000_000,
+};
+const meteredModel: ModelConfig = {
+  name: "pay",
+  economy: "metered",
+  currency: "USD",
+  pricePerMillionInput: 0.27,
+  pricePerMillionOutput: 0.41,
+};
+
+describe("initialBudgetState — stato a consumo zero (B4)", () => {
+  it("capped/tiered: cap = periodTokenCapacity, used 0 (stessa scala della stima)", () => {
+    expect(initialBudgetState(cappedModel)).toEqual({
+      economy: "subscription_cap",
+      period: "weekly",
+      cap: 1_000_000,
+      used: 0,
+    });
+    // headroom pieno appena inizializzato.
+    expect(headroom(initialBudgetState(cappedModel))).toBe(1);
+  });
+
+  it("metered: spent 0", () => {
+    expect(initialBudgetState(meteredModel)).toEqual({
+      economy: "metered",
+      currency: "USD",
+      spent: 0,
+    });
+  });
+});
+
+describe("syncLedger — allinea ledger ai modelli di config (B1/B4)", () => {
+  it("aggiunge i modelli mancanti a consumo zero", () => {
+    const out = syncLedger(emptyLedger(), [cappedModel, meteredModel]);
+    expect(Object.keys(out.models).sort()).toEqual(["opus", "pay"]);
+    expect(out.models.opus).toMatchObject({ cap: 1_000_000, used: 0 });
+  });
+
+  it("preserva gli stati esistenti (non azzera il consumo già tracciato)", () => {
+    const start: Ledger = { models: { opus: capped(1_000_000, 700_000) } };
+    const out = syncLedger(start, [cappedModel, meteredModel]);
+    expect(out.models.opus).toMatchObject({ used: 700_000 }); // intatto
+    expect(out.models.pay).toMatchObject({ spent: 0 }); // nuovo
   });
 });

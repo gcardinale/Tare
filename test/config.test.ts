@@ -63,6 +63,13 @@ describe("parseConfig — config valida", () => {
   it("il template di default supera sempre il parsing", () => {
     expect(parseConfig(DEFAULT_CONFIG_JSONC).ok).toBe(true);
   });
+
+  it("autoPassCostBelow: null trattato come assente (B7)", () => {
+    const cfg = `{ ${MODELS}, "policy": { "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "autoPassCostBelow": null } }`;
+    const r = parseConfig(cfg);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.policy.autoPassCostBelow).toBeUndefined();
+  });
 });
 
 describe("parseConfig — errori struttura", () => {
@@ -122,6 +129,22 @@ describe("parseConfig — errori modello", () => {
       ).ok,
     ).toBe(false);
   });
+  it("metered con prezzo <= 0 → err (B3)", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 0, "priceOutPerMillion": 2 }`,
+        ),
+      ).ok,
+    ).toBe(false);
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": -1 }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
 });
 
 describe("parseConfig — errori policy", () => {
@@ -175,5 +198,24 @@ describe("parseConfig — errori policy", () => {
         ),
       ).ok,
     ).toBe(false);
+  });
+  it("singlePassBelowTokens negativo → err (B2)", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": -1, "opusMinHeadroomPct": 20, "preferCappedOverMetered": true }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+  it("opusMinHeadroomPct fuori 0..100 → err (B2)", () => {
+    const make = (pct: number): string =>
+      withPolicy(
+        `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": ${pct}, "preferCappedOverMetered": true }`,
+      );
+    expect(parseConfig(make(-1)).ok).toBe(false);
+    expect(parseConfig(make(150)).ok).toBe(false);
+    expect(parseConfig(make(0)).ok).toBe(true); // estremi ammessi
+    expect(parseConfig(make(100)).ok).toBe(true);
   });
 });

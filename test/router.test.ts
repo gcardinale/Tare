@@ -85,10 +85,13 @@ describe("route — idoneità budget/policy", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("modello assente dal ledger: metered passa (no tetto), capped no", () => {
+  it("modello assente dal ledger: trattato come budget pieno → idoneo (B1)", () => {
     const empty: Ledger = { models: {} };
     expect(route(task, [pay], empty, policy()).ok).toBe(true);
-    expect(route(task, [opus], empty, policy()).ok).toBe(false);
+    // capped non tracciato = nessun consumo = pieno → idoneo (prima era escluso).
+    const r = route(task, [opus], empty, policy());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.model).toBe("opus");
   });
 
   it("lista modelli vuota → err", () => {
@@ -202,8 +205,15 @@ describe("route — RouteDecision", () => {
       expect(r.value).toMatchObject({ model: expect.any(String), mode: "single_pass" });
       expect(r.value.estimate.unit).toBe("pct_quota"); // vince lite (tiered)
       expect(r.value.suggestion).toContain(r.value.model);
+      expect(r.value.suggestion).toMatch(/% quota/); // etichetta unità (B5)
       expect(r.value.alternatives.length).toBe(2);
     }
+  });
+
+  it("suggestion distingue % cap da % quota (B5)", () => {
+    const r = route(cls("single_pass", [100_000, 200_000]), [opus], ledger(0, 0), policy());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.suggestion).toMatch(/% cap/);
   });
 
   it("suggestion in $ per un metered", () => {
