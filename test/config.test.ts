@@ -170,6 +170,75 @@ describe("parseConfig — routing del proxy (M4)", () => {
   });
 });
 
+describe("parseConfig — ruoli e roleRouting (M6)", () => {
+  const withModel = (def: string): string => `{ "models": { "x": ${def} }, ${POLICY} }`;
+  const withPolicy = (def: string): string => `{ ${MODELS}, "policy": ${def} }`;
+
+  it("mappa roles sul modello", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "roles": ["review"] }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.models[0]).toMatchObject({ roles: ["review"] });
+  });
+
+  it("roles assente → modello senza roles (jolly)", () => {
+    const r = parseConfig(
+      withModel(
+        `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2 }`,
+      ),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.models[0]).not.toHaveProperty("roles");
+  });
+
+  it("roles non array → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "roles": "review" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("ruolo non valido → err", () => {
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "tiered_quota", "period": "weekly", "tokenCapacity": 1, "roles": ["deploy"] }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("roleRouting strict/off ammessi; assente → undefined", () => {
+    const strict = parseConfig(
+      withPolicy(
+        `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "roleRouting": "strict" }`,
+      ),
+    );
+    expect(strict.ok).toBe(true);
+    if (strict.ok) expect(strict.value.policy.roleRouting).toBe("strict");
+
+    const off = parseConfig(full);
+    expect(off.ok).toBe(true);
+    if (off.ok) expect(off.value.policy.roleRouting).toBeUndefined();
+  });
+
+  it("roleRouting con valore non ammesso → err", () => {
+    expect(
+      parseConfig(
+        withPolicy(
+          `{ "singlePassBelowTokens": 1, "opusMinHeadroomPct": 1, "preferCappedOverMetered": true, "roleRouting": "loose" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
+});
+
 describe("parseConfig — errori struttura", () => {
   it("JSONC malformato → err", () => {
     expect(parseConfig("{ models: ").ok).toBe(false);

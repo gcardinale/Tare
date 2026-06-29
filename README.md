@@ -194,26 +194,35 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
 ```jsonc
 // ~/.tare/config.jsonc
 {
-  // Candidate models, one per economy. The proxy routing fields are optional:
+  // Candidate models, one per economy. Optional per-model fields:
   //   baseUrl       upstream endpoint (absent → Anthropic default)
-  //   apiKeyEnv     NAME of the env var holding the key (never the key itself;
-  //                 absent → the incoming auth header is forwarded)
+  //   apiKeyEnv     NAME of the env var holding the key (never the key itself).
+  //                 ABSENT = the incoming auth header is forwarded as-is — this is
+  //                 how a Pro/Max SUBSCRIPTION used via Claude Code works (your
+  //                 session's OAuth passes through). Set it only for key-based APIs.
   //   upstreamModel model id to send to the provider (absent → the request's own)
+  //   roles         ["review"] and/or ["write"]: with policy.roleRouting "strict",
+  //                 dedicates the model to that kind of task. Absent = wildcard.
   "models": {
+    // Pro/Max subscription (e.g. Opus) used via Claude Code: NO apiKeyEnv.
+    // Here dedicated to WRITING code.
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
       "tokenCapacity": 1000000,
       "baseUrl": "https://api.anthropic.com",
-      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "roles": ["write"],
     },
+    // Key-based model dedicated to code REVIEW.
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
       "baseUrl": "https://api.anthropic.com",
       "apiKeyEnv": "GLM_LITE_API_KEY",
+      "roles": ["review"],
     },
+    // Metered wildcard: no roles, covers ambiguous tasks.
     "deepseek": {
       "economy": "metered",
       "currency": "USD",
@@ -228,12 +237,15 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
     "singlePassBelowTokens": 15000,
     "opusMinHeadroomPct": 20,
     "preferCappedOverMetered": true,
+    // "strict" forces review→review-models and write→write-models (wildcard as
+    // fallback). "off" (or absent) ignores roles.
+    "roleRouting": "strict",
     // Auto-pass threshold. Despite the name, it is compared in the chosen model's
     // own currency (no cross-currency conversion): with a non-USD model, read it
     // as "that currency".
     "autoPassCostBelow": { "meteredUsd": 0.01 },
   },
-  // Coming in M4 — not read by the loader yet:
+  // Not read by the loader yet (planned):
   "classifier": {
     "backend": "local", // local GGUF judge. free, private, runs on your machine.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
@@ -245,6 +257,13 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
   },
 }
 ```
+
+#### Subscriptions (Pro/Max) and role routing
+
+Two things worth calling out, both shown above:
+
+- **Subscriptions, not just API keys.** A model with **no `apiKeyEnv`** makes Tare forward your incoming auth header untouched — including the OAuth token Claude Code uses for a **Pro/Max plan**. So your subscription is just a `subscription_cap` model with no key, and it can compete head-to-head with metered API models in the same ledger. (Tare doesn't store or manage credentials; it only forwards them.)
+- **A model for reviewing, a model for writing.** Tag models with `roles` and set `roleRouting: "strict"` to **force** review tasks onto your review model and writing tasks onto your write model — two separate budgets that never eat into each other. The role is inferred from the prompt (transparent keywords), and you can override it with an explicit `[review]` / `[write]` tag. A model with no `roles` is a wildcard that catches anything ambiguous.
 
 ### What Tare is _not_ (and how it differs)
 
@@ -478,26 +497,35 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
 ```jsonc
 // ~/.tare/config.jsonc
 {
-  // Modelli candidati, uno per economia. I campi di routing del proxy sono opzionali:
+  // Modelli candidati, uno per economia. Campi opzionali per modello:
   //   baseUrl       endpoint upstream (assente → default Anthropic)
-  //   apiKeyEnv     NOME della env var con la chiave (mai la chiave qui dentro;
-  //                 assente → si inoltra l'header di auth in ingresso)
+  //   apiKeyEnv     NOME della env var con la chiave (mai la chiave qui dentro).
+  //                 ASSENTE = si inoltra l'auth in ingresso così com'è: è il caso
+  //                 degli ABBONAMENTI Pro/Max usati via Claude Code (l'OAuth della
+  //                 tua sessione passa così). Mettilo solo per le API a chiave.
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
+  //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
+  //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
   "models": {
+    // Abbonamento Pro/Max (es. Opus) via Claude Code: NIENTE apiKeyEnv.
+    // Qui dedicato alla SCRITTURA del codice.
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
       "tokenCapacity": 1000000,
       "baseUrl": "https://api.anthropic.com",
-      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "roles": ["write"],
     },
+    // Modello a chiave dedicato alle REVIEW del codice.
     "glm-lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
       "baseUrl": "https://api.anthropic.com",
       "apiKeyEnv": "GLM_LITE_API_KEY",
+      "roles": ["review"],
     },
+    // Jolly a consumo: nessun ruolo, copre i task ambigui.
     "deepseek": {
       "economy": "metered",
       "currency": "USD",
@@ -512,12 +540,15 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
     "singlePassBelowTokens": 15000,
     "opusMinHeadroomPct": 20,
     "preferCappedOverMetered": true,
+    // "strict" forza review→modelli-review e write→modelli-write (jolly come ripiego).
+    // "off" (o assente) ignora i ruoli.
+    "roleRouting": "strict",
     // Soglia di auto-pass. Nonostante il nome, è confrontata NELLA VALUTA del
     // modello scelto (nessuna conversione cross-currency): con un modello non-USD,
     // intendila in quella valuta.
     "autoPassCostBelow": { "meteredUsd": 0.01 },
   },
-  // In arrivo (M4) — non ancora letti dal loader:
+  // Non ancora letti dal loader (pianificati):
   "classifier": {
     "backend": "local", // giudice GGUF locale. gratuito, privato, gira sulla tua macchina.
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
@@ -529,6 +560,13 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
   },
 }
 ```
+
+#### Abbonamenti (Pro/Max) e routing per ruolo
+
+Due cose da evidenziare, entrambe nell'esempio sopra:
+
+- **Abbonamenti, non solo chiavi API.** Un modello **senza `apiKeyEnv`** fa sì che Tare inoltri l'header di auth in ingresso così com'è — incluso il token OAuth che Claude Code usa per un **piano Pro/Max**. Quindi il tuo abbonamento è semplicemente un modello `subscription_cap` senza chiave, e può **concorrere alla pari** con i modelli a consumo nello stesso ledger. (Tare non conserva né gestisce credenziali: le inoltra soltanto.)
+- **Un modello per le review, uno per la scrittura.** Etichetta i modelli con `roles` e imposta `roleRouting: "strict"` per **forzare** i task di review sul modello-review e quelli di scrittura sul modello-write — due budget separati che non si mangiano a vicenda. Il ruolo è dedotto dal prompt (keyword trasparenti) e puoi forzarlo con un tag esplicito `[review]` / `[write]`. Un modello senza `roles` è un jolly che cattura i task ambigui.
 
 ### Cosa Tare _non_ è (e in cosa si distingue)
 

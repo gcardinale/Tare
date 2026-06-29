@@ -25,6 +25,7 @@ import type {
   ModelConfig,
   Policy,
   Result,
+  Role,
   RouteCandidate,
   RouteDecision,
 } from "../types/index.js";
@@ -55,6 +56,33 @@ function fits(economy: Economy, headroomPct: number, est: CostRange, policy: Pol
   const projected = headroomPct - est.high;
   if (economy === "subscription_cap") return projected >= policy.opusMinHeadroomPct;
   return projected >= 0; // tiered_quota: basta non sforare la quota.
+}
+
+/** Un modello "jolly": senza ruoli dichiarati, candidabile per qualsiasi ruolo. */
+function isWildcard(m: ModelConfig): boolean {
+  return m.roles === undefined || m.roles.length === 0;
+}
+
+/**
+ * Restringe i candidati per ruolo (DEC-ROUTER-3). Con `roleRouting: "strict"` un
+ * task-review va SOLO sui modelli con ruolo "review" e un task-write SOLO su quelli
+ * "write" (la "forzatura" richiesta): così le due attività usano budget separati.
+ * Ripieghi, in ordine: modelli del ruolo → jolly senza ruolo → tutti (non si blocca
+ * mai per assenza di un modello-ruolo; il filtro budget arriva dopo). Ruolo `unknown`
+ * o `roleRouting` diverso da "strict" → nessuna restrizione.
+ */
+function pickByRole(
+  models: readonly ModelConfig[],
+  role: Role | "unknown",
+  roleRouting: Policy["roleRouting"],
+): readonly ModelConfig[] {
+  if (roleRouting !== "strict") return models;
+  if (role !== "unknown") {
+    const matched = models.filter((m) => m.roles?.includes(role));
+    if (matched.length > 0) return matched;
+  }
+  const neutral = models.filter(isWildcard);
+  return neutral.length > 0 ? neutral : models;
 }
 
 /** Un candidato con i dati che servono a idoneità e ranking. */
@@ -130,8 +158,11 @@ export function route(
     expectedSteps: mode === "single_pass" ? 1 : classification.expectedSteps,
   };
 
+  // DEC-ROUTER-3: restringi per ruolo PRIMA del filtro budget (routing per ruolo).
+  const candidates = pickByRole(models, classification.role, policy.roleRouting);
+
   // Costruisci le candidature idonee.
-  const eligible: Ranked[] = models
+  const eligible: Ranked[] = candidates
     .map((model) => ({
       candidate: { model: model.name, mode, estimate: estimate(effective, model) },
       economy: model.economy,

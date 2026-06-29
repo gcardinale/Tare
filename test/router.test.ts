@@ -24,11 +24,17 @@ const pay: ModelConfig = {
   pricePerMillionOutput: 0.41,
 };
 
-const cls = (mode: Mode, band: [number, number], confidence = 0.6): Classification => ({
+const cls = (
+  mode: Mode,
+  band: [number, number],
+  confidence = 0.6,
+  role: Classification["role"] = "unknown",
+): Classification => ({
   mode,
   expectedSteps: mode === "agentic" ? 7 : 1,
   tokenBand: band,
   confidence,
+  role,
 });
 
 // headroom: cap=100 così `used` è già una percentuale leggibile.
@@ -60,6 +66,60 @@ describe("route — modalità effettiva", () => {
     const r = route(cls("agentic", [1000, 50_000]), [opus], ledger(0, 0), policy());
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.mode).toBe("agentic");
+  });
+});
+
+// ─── Routing per ruolo (DEC-ROUTER-3) ───────────────────────────────────────
+
+describe("route — routing per ruolo (strict)", () => {
+  const writeModel: ModelConfig = { ...opus, name: "wri", roles: ["write"] };
+  const reviewModel: ModelConfig = { ...lite, name: "rev", roles: ["review"] };
+  const jolly: ModelConfig = { ...pay, name: "joll" }; // metered, nessun ruolo
+  const empty: Ledger = { models: {} }; // modelli non tracciati = budget pieno
+  const strict = policy({ roleRouting: "strict" });
+  const small = (role: Classification["role"]): Classification =>
+    cls("single_pass", [1000, 2000], 0.6, role);
+
+  const all = [writeModel, reviewModel, jolly];
+
+  it("task review → modello-review (non il write)", () => {
+    const r = route(small("review"), all, empty, strict);
+    expect(r.ok && r.value.model).toBe("rev");
+  });
+
+  it("task write → modello-write", () => {
+    const r = route(small("write"), all, empty, strict);
+    expect(r.ok && r.value.model).toBe("wri");
+  });
+
+  it("ruolo unknown → jolly (modello senza ruolo)", () => {
+    const r = route(small("unknown"), all, empty, strict);
+    expect(r.ok && r.value.model).toBe("joll");
+  });
+
+  it("nessun modello per il ruolo → ripiega sul jolly", () => {
+    const r = route(small("review"), [writeModel, jolly], empty, strict);
+    expect(r.ok && r.value.model).toBe("joll");
+  });
+
+  it("roleRouting off (default) ignora i ruoli: write su [review, jolly] → review (non-metered preferito)", () => {
+    const off = route(small("write"), [reviewModel, jolly], empty, policy());
+    expect(off.ok && off.value.model).toBe("rev");
+    // mentre strict, senza modello-write, ripiega sul jolly:
+    const st = route(small("write"), [reviewModel, jolly], empty, strict);
+    expect(st.ok && st.value.model).toBe("joll");
+  });
+
+  it("nessun modello-ruolo né jolly → ripiega su TUTTI i modelli", () => {
+    // Solo un modello write: un task review non ha né review né jolly → si usa tutto.
+    const r = route(small("review"), [writeModel], empty, strict);
+    expect(r.ok && r.value.model).toBe("wri");
+  });
+
+  it("roles: [] è trattato come jolly (nessun ruolo)", () => {
+    const emptyRoles: ModelConfig = { ...pay, name: "neu", roles: [] };
+    const r = route(small("unknown"), [writeModel, emptyRoles], empty, strict);
+    expect(r.ok && r.value.model).toBe("neu");
   });
 });
 

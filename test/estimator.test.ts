@@ -8,6 +8,7 @@ const singlePass = (band: [number, number], confidence = 0.6): Classification =>
   expectedSteps: 1,
   tokenBand: band,
   confidence,
+  role: "unknown",
 });
 
 const agentic = (band: [number, number], confidence = 0.6): Classification => ({
@@ -15,6 +16,7 @@ const agentic = (band: [number, number], confidence = 0.6): Classification => ({
   expectedSteps: 7,
   tokenBand: band,
   confidence,
+  role: "unknown",
 });
 
 const capped: ModelConfig = {

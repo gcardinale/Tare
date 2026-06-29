@@ -9,7 +9,7 @@
  * può leggerle e correggerle. Vedi `ai/decisions.md → DEC-CLASS-1`.
  */
 
-import type { Classification, ClassifyInput, Mode } from "../types/index.js";
+import type { Classification, ClassifyInput, Mode, Role } from "../types/index.js";
 
 /** Contesto di default quando il chiamante non lo fornisce (prompt piccolo tipico). */
 const DEFAULT_CONTEXT_TOKENS = 4000;
@@ -82,6 +82,60 @@ const SINGLE_PASS_TERMS: readonly string[] = [
   "correggi il refuso",
 ];
 
+/** Segnali di un task di REVISIONE (esamina codice esistente). */
+const REVIEW_TERMS: readonly string[] = [
+  // EN
+  "review",
+  "code review",
+  "critique",
+  "audit",
+  "inspect",
+  "analyze",
+  "analyse",
+  "analysis",
+  "find bugs",
+  "look for bugs",
+  "lint",
+  // IT
+  "rivedi",
+  "revisiona",
+  "revisione",
+  "critica",
+  "valuta",
+  "controlla",
+  "ispeziona",
+  "analizza",
+  "trova bug",
+  "cerca bug",
+  "verifica",
+];
+
+/** Segnali di un task di SCRITTURA (produce o modifica codice). */
+const WRITE_TERMS: readonly string[] = [
+  // EN
+  "write",
+  "implement",
+  "add",
+  "create",
+  "build",
+  "scaffold",
+  "refactor",
+  "fix",
+  "rewrite",
+  "generate",
+  // IT
+  "scrivi",
+  "implementa",
+  "aggiungi",
+  "crea",
+  "costruisci",
+  "genera",
+  "correggi",
+  "sistema",
+  "rifattorizza",
+  "riscrivi",
+];
+
 /** Tool che indicano capacità di agire (edit/exec) → più probabilità di loop. */
 const ACTION_TOOLS: readonly string[] = [
   "edit",
@@ -119,6 +173,25 @@ function countMatches(haystack: string, terms: readonly string[]): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Rileva il ruolo del task (review/write), asse ortogonale alla modalità. Un tag
+ * esplicito `[review]`/`[write]` nel prompt VINCE sull'euristica (override). Altrimenti
+ * si contano i segnali testuali: prevale il gruppo più numeroso; pari/zero → unknown.
+ */
+function detectRole(task: string): Role | "unknown" {
+  const hasReviewTag = /\[\s*review\s*\]/i.test(task);
+  const hasWriteTag = /\[\s*write\s*\]/i.test(task);
+  if (hasReviewTag && !hasWriteTag) return "review";
+  if (hasWriteTag && !hasReviewTag) return "write";
+
+  const text = task.toLowerCase();
+  const review = countMatches(text, REVIEW_TERMS);
+  const write = countMatches(text, WRITE_TERMS);
+  if (review > write) return "review";
+  if (write > review) return "write";
+  return "unknown";
 }
 
 /**
@@ -160,7 +233,9 @@ export function classify(input: ClassifyInput): Classification {
   const distance = Math.abs(score - AGENTIC_THRESHOLD);
   const confidence = clamp(0.45 + distance * 0.08, 0.3, 0.85);
 
-  return { mode, expectedSteps, tokenBand, confidence };
+  const role = detectRole(input.task);
+
+  return { mode, expectedSteps, tokenBand, confidence, role };
 }
 
 /**

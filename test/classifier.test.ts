@@ -27,6 +27,36 @@ describe("classify — invarianti", () => {
   }
 });
 
+describe("classify — ruolo (review vs write)", () => {
+  it("review da keyword → role review", () => {
+    expect(classify({ task: "rivedi questa funzione e cerca bug" }).role).toBe("review");
+    expect(classify({ task: "do a code review of the auth module" }).role).toBe("review");
+  });
+
+  it("scrittura da keyword → role write", () => {
+    expect(classify({ task: "implementa la cache e aggiungi i test" }).role).toBe("write");
+    expect(classify({ task: "write a function that parses dates" }).role).toBe("write");
+  });
+
+  it("task senza segnali di ruolo → unknown", () => {
+    expect(classify({ task: "ciao come stai" }).role).toBe("unknown");
+  });
+
+  it("tag esplicito [review] vince sull'euristica di scrittura", () => {
+    // "implementa" spingerebbe a write, ma il tag forza review.
+    expect(classify({ task: "[review] implementa la cache" }).role).toBe("review");
+  });
+
+  it("tag esplicito [write] vince sull'euristica di review", () => {
+    expect(classify({ task: "[write] rivedi e poi scrivi" }).role).toBe("write");
+  });
+
+  it("entrambi i tag → si ricade sull'euristica", () => {
+    // Con entrambi i tag, decide il conteggio dei keyword: qui prevale review.
+    expect(classify({ task: "[review] [write] rivedi e controlla" }).role).toBe("review");
+  });
+});
+
 describe("classify — single_pass (lavoro delimitato)", () => {
   it("una traduzione è single_pass", () => {
     const c = classify({ task: "traduci questo testo in inglese", contextTokens: 2000 });

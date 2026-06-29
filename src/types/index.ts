@@ -20,6 +20,13 @@ export const err = <E>(error: E): Result<never, E> => ({ ok: false, error });
 /** Modalità di esecuzione: l'asse che i router esistenti ignorano. */
 export type Mode = "single_pass" | "agentic";
 
+/**
+ * Ruolo del task: asse ORTOGONALE alla modalità. Serve a dedicare modelli diversi
+ * alla revisione e alla scrittura del codice (routing per ruolo, vedi `Policy.roleRouting`).
+ * `unknown` = il classifier non si sbilancia (task ambiguo).
+ */
+export type Role = "review" | "write";
+
 /** Input per la classificazione di un task. */
 export interface ClassifyInput {
   /** Il prompt / task in linguaggio naturale. */
@@ -39,6 +46,8 @@ export interface Classification {
   readonly tokenBand: readonly [number, number];
   /** Confidenza dichiarata, 0..1. */
   readonly confidence: number;
+  /** Ruolo rilevato (review/write) o `unknown` se ambiguo. */
+  readonly role: Role | "unknown";
 }
 
 // ─── Economie & Ledger ─────────────────────────────────────────────────────
@@ -102,6 +111,16 @@ export interface ModelRouting {
 }
 
 /**
+ * Ruoli a cui un modello è dedicato (routing per ruolo). Opzionale: un modello
+ * senza `roles` è un "jolly", candidato per qualsiasi ruolo. Con `Policy.roleRouting:
+ * "strict"`, un task-review va SOLO sui modelli con ruolo "review" e un task-write
+ * SOLO su quelli "write": così review e scrittura usano budget separati.
+ */
+export interface ModelRoles {
+  readonly roles?: readonly Role[];
+}
+
+/**
  * Configurazione di un modello, una per economia. È ciò che serve all'estimator
  * per trasformare i token in costo nell'unità giusta.
  *
@@ -115,13 +134,15 @@ export type ModelConfig =
       readonly economy: "subscription_cap";
       readonly period: Period;
       readonly periodTokenCapacity: number;
-    } & ModelRouting)
+    } & ModelRouting &
+      ModelRoles)
   | ({
       readonly name: string;
       readonly economy: "tiered_quota";
       readonly period: Period;
       readonly periodTokenCapacity: number;
-    } & ModelRouting)
+    } & ModelRouting &
+      ModelRoles)
   | ({
       readonly name: string;
       readonly economy: "metered";
@@ -130,7 +151,8 @@ export type ModelConfig =
       readonly pricePerMillionInput: number;
       /** Prezzo per 1.000.000 di token di output. */
       readonly pricePerMillionOutput: number;
-    } & ModelRouting);
+    } & ModelRouting &
+      ModelRoles);
 
 // ─── Estimator ───────────────────────────────────────────────────────────────
 
@@ -153,6 +175,11 @@ export interface Policy {
   readonly opusMinHeadroomPct: number;
   readonly preferCappedOverMetered: boolean;
   readonly autoPassCostBelow?: { readonly meteredUsd?: number };
+  /**
+   * Routing per ruolo. `"strict"` forza review→modelli-review e write→modelli-write
+   * (jolly come ripiego); `"off"` (default, se assente) ignora i ruoli.
+   */
+  readonly roleRouting?: "strict" | "off";
 }
 
 /** Una candidatura: modello + modalità + stima. */

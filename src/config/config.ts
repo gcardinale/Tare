@@ -22,6 +22,7 @@ import type {
   Period,
   Policy,
   Result,
+  Role,
   TareConfig,
 } from "../types/index.js";
 import { err, ok } from "../types/index.js";
@@ -32,6 +33,24 @@ function isPlainObject(x: unknown): x is Record<string, unknown> {
 
 const isFiniteNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const isPeriod = (x: unknown): x is Period => x === "weekly" || x === "monthly";
+const isRole = (x: unknown): x is Role => x === "review" || x === "write";
+
+/**
+ * Estrae e valida i `roles` di un modello (routing per ruolo). Assenti/null →
+ * oggetto vuoto (modello "jolly"). Ogni voce deve essere `review` o `write`.
+ */
+function toRoles(name: string, def: Record<string, unknown>): Result<{ roles?: readonly Role[] }> {
+  if (def.roles === undefined || def.roles === null) return ok({});
+  if (!Array.isArray(def.roles)) return err(`modello "${name}": "roles" deve essere un array`);
+  const roles: Role[] = [];
+  for (const x of def.roles) {
+    if (!isRole(x)) {
+      return err(`modello "${name}": ruolo non valido "${String(x)}" (atteso review|write)`);
+    }
+    roles.push(x);
+  }
+  return ok({ roles });
+}
 
 const isHttpUrl = (x: string): boolean => {
   try {
@@ -76,7 +95,9 @@ function toModel(name: string, def: unknown): Result<ModelConfig> {
 
   const routing = toRouting(name, def);
   if (!routing.ok) return routing;
-  const r = routing.value;
+  const rolesR = toRoles(name, def);
+  if (!rolesR.ok) return rolesR;
+  const r = { ...routing.value, ...rolesR.value };
 
   if (def.economy === "metered") {
     if (typeof def.currency !== "string") return err(`modello "${name}": "currency" mancante`);
@@ -134,11 +155,25 @@ function toPolicy(x: unknown): Result<Policy> {
     return err(`"policy.preferCappedOverMetered" deve essere booleano`);
   }
 
-  const base = {
+  const base: {
+    singlePassBelowTokens: number;
+    opusMinHeadroomPct: number;
+    preferCappedOverMetered: boolean;
+    roleRouting?: "strict" | "off";
+    autoPassCostBelow?: { meteredUsd?: number };
+  } = {
     singlePassBelowTokens: x.singlePassBelowTokens,
     opusMinHeadroomPct: x.opusMinHeadroomPct,
     preferCappedOverMetered: x.preferCappedOverMetered,
   };
+
+  // `roleRouting` opzionale: assente/null = "off" (i ruoli vengono ignorati).
+  if (x.roleRouting !== undefined && x.roleRouting !== null) {
+    if (x.roleRouting !== "strict" && x.roleRouting !== "off") {
+      return err(`"policy.roleRouting" deve essere "strict" o "off"`);
+    }
+    base.roleRouting = x.roleRouting;
+  }
 
   // `null` (comune in JSON per "nessun valore") è trattato come assente (audit B7).
   if (x.autoPassCostBelow === undefined || x.autoPassCostBelow === null) return ok(base);
@@ -189,29 +224,35 @@ export function parseConfig(text: string): Result<TareConfig> {
 export const DEFAULT_CONFIG_JSONC = `{
   // Configurazione di Tare — ~/.tare/config.jsonc
   // I modelli che Tare può scegliere, ciascuno nella sua "economia".
-  // Campi di routing del proxy (M4), tutti opzionali:
-  //   baseUrl       endpoint upstream del modello (assente → default Anthropic)
-  //   apiKeyEnv     NOME della env var con la chiave (MAI la chiave qui dentro;
-  //                 assente → si inoltra l'header di auth in ingresso)
+  // Campi opzionali per modello:
+  //   baseUrl       endpoint upstream (assente → default Anthropic)
+  //   apiKeyEnv     NOME della env var con la chiave (MAI la chiave qui dentro).
+  //                 ASSENTE = si inoltra l'auth in ingresso: è il caso degli
+  //                 ABBONAMENTI Pro/Max usati via Claude Code (l'OAuth della tua
+  //                 sessione passa così com'è). Mettilo solo per le API a chiave.
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
+  //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
+  //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
   "models": {
-    // Piano ad abbonamento con tetto periodico (es. Opus).
+    // Abbonamento Pro/Max (es. Opus) usato via Claude Code: NIENTE apiKeyEnv.
+    // Qui dedicato alla SCRITTURA del codice.
     "opus": {
       "economy": "subscription_cap",
       "period": "weekly",
       "tokenCapacity": 1000000, // token che esauriscono il 100% del periodo
       "baseUrl": "https://api.anthropic.com",
-      "apiKeyEnv": "ANTHROPIC_API_KEY"
+      "roles": ["write"]
     },
-    // Quota a livelli (es. modello "Lite").
+    // Modello a chiave (es. "Lite") dedicato alle REVIEW del codice.
     "lite": {
       "economy": "tiered_quota",
       "period": "weekly",
       "tokenCapacity": 2000000,
       "baseUrl": "https://api.anthropic.com",
-      "apiKeyEnv": "LITE_API_KEY"
+      "apiKeyEnv": "LITE_API_KEY",
+      "roles": ["review"]
     },
-    // Pagamento a consumo.
+    // Jolly a consumo: nessun ruolo, copre i task ambigui.
     "pay": {
       "economy": "metered",
       "currency": "USD",
@@ -226,6 +267,9 @@ export const DEFAULT_CONFIG_JSONC = `{
     "singlePassBelowTokens": 15000,
     "opusMinHeadroomPct": 20,
     "preferCappedOverMetered": true,
+    // "strict" forza review→modelli-review e write→modelli-write (jolly come ripiego).
+    // "off" (o assente) ignora i ruoli.
+    "roleRouting": "strict",
     "autoPassCostBelow": { "meteredUsd": 0.01 }
   }
 }

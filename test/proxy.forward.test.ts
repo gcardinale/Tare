@@ -225,7 +225,13 @@ describe("toUsage", () => {
 
 describe("formatPreflight", () => {
   const basePlan = (over: Partial<Plan["decision"]>): Plan => ({
-    classification: { mode: "agentic", expectedSteps: 5, tokenBand: [1, 2], confidence: 0.6 },
+    classification: {
+      mode: "agentic",
+      expectedSteps: 5,
+      tokenBand: [1, 2],
+      confidence: 0.6,
+      role: "unknown",
+    },
     decision: {
       model: "pay",
       mode: "agentic",
