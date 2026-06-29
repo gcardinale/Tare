@@ -205,12 +205,10 @@ async function handle(
   }
 
   const text = await upstream.text();
-  res.writeHead(upstream.status, {
-    "content-type": upstream.headers.get("content-type") ?? "application/json",
-  });
-  res.end(text);
 
-  // Consumo reale → ledger. Errori solo loggati: la risposta è già partita.
+  // Consumo reale → ledger PRIMA di rispondere: così la richiesta successiva
+  // dell'agente vede già il budget aggiornato (niente race sul ledger). Errori
+  // solo loggati: non devono impedire all'agente di ricevere la risposta.
   try {
     const tokens = extractUsageTokens(JSON.parse(text));
     if (tokens !== null) {
@@ -224,6 +222,11 @@ async function handle(
   } catch {
     // risposta non-JSON (es. errore upstream non strutturato): niente da registrare.
   }
+
+  res.writeHead(upstream.status, {
+    "content-type": upstream.headers.get("content-type") ?? "application/json",
+  });
+  res.end(text);
 }
 
 /**
@@ -250,7 +253,10 @@ export function startProxy(
   const server = createProxyServer(opts, fetchImpl);
   return new Promise((resolve) => {
     server.listen(r.port, r.host, () => {
-      resolve({ server, url: `http://${r.host}:${r.port}` });
+      // Porta EFFETTIVA: con `port: 0` il SO ne assegna una libera (utile ai test).
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : r.port;
+      resolve({ server, url: `http://${r.host}:${port}` });
     });
   });
 }
