@@ -90,10 +90,16 @@ describe("buildForwardHeaders", () => {
     );
   });
 
-  it("con apiKey: imposta x-api-key e rimuove authorization", () => {
+  it("con apiKey (default x-api-key): imposta x-api-key e rimuove authorization", () => {
     const h = buildForwardHeaders({ authorization: "Bearer old", "x-api-key": "old" }, "nuova");
     expect(h["x-api-key"]).toBe("nuova");
     expect(h).not.toHaveProperty("authorization");
+  });
+
+  it("authStyle bearer: imposta Authorization Bearer e rimuove x-api-key", () => {
+    const h = buildForwardHeaders({ "x-api-key": "old" }, "tok", "bearer");
+    expect(h["authorization"]).toBe("Bearer tok");
+    expect(h).not.toHaveProperty("x-api-key");
   });
 
   it("unisce i valori array degli header", () => {

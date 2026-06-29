@@ -281,7 +281,7 @@ async function handle(
   const keyR = resolveApiKey(chosen, r.env);
   if (!keyR.ok) return fallbackTo(keyR.error);
 
-  const headers = buildForwardHeaders(req.headers, keyR.value);
+  const headers = buildForwardHeaders(req.headers, keyR.value, chosen.authStyle);
   headers["content-type"] = "application/json"; // body riserializzato in JSON
   const fwdBody = JSON.stringify(withUpstreamModel(body, chosen));
   // Ricostruisce l'URL upstream da `req.url`, così path E query (se presenti)

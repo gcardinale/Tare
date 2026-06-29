@@ -168,6 +168,24 @@ describe("parseConfig — routing del proxy (M4)", () => {
       ).ok,
     ).toBe(false);
   });
+
+  it("authStyle bearer mappato; valore non valido → err", () => {
+    const good = parseConfig(
+      withModel(
+        `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2, "authStyle": "bearer" }`,
+      ),
+    );
+    expect(good.ok).toBe(true);
+    if (good.ok) expect(good.value.models[0]).toMatchObject({ authStyle: "bearer" });
+
+    expect(
+      parseConfig(
+        withModel(
+          `{ "economy": "metered", "currency": "USD", "priceInPerMillion": 1, "priceOutPerMillion": 2, "authStyle": "basic" }`,
+        ),
+      ).ok,
+    ).toBe(false);
+  });
 });
 
 describe("parseConfig — ruoli e roleRouting (M6)", () => {

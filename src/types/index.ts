@@ -108,6 +108,12 @@ export interface ModelRouting {
   readonly baseUrl?: string;
   readonly apiKeyEnv?: string;
   readonly upstreamModel?: string;
+  /**
+   * Come inviare la chiave (`apiKeyEnv`): `x-api-key` (default, stile Anthropic
+   * nativo) o `bearer` (header `Authorization: Bearer`, usato dagli endpoint
+   * Anthropic-compatible di terze parti come DeepSeek/z.ai via `ANTHROPIC_AUTH_TOKEN`).
+   */
+  readonly authStyle?: "x-api-key" | "bearer";
 }
 
 /**

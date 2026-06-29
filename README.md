@@ -201,6 +201,8 @@ From then on, expensive tasks show a preflight screen; cheap ones can be set to 
   //                 how a Pro/Max SUBSCRIPTION used via Claude Code works (your
   //                 session's OAuth passes through). Set it only for key-based APIs.
   //   upstreamModel model id to send to the provider (absent → the request's own)
+  //   authStyle     "x-api-key" (default) or "bearer": how to send the key. Third-party
+  //                 Anthropic-compatible endpoints (DeepSeek/z.ai) want "bearer".
   //   roles         ["review"] and/or ["write"]: with policy.roleRouting "strict",
   //                 dedicates the model to that kind of task. Absent = wildcard.
   //   modes         ["single_pass"] and/or ["agentic"]: allowed modes. Absent = all.
@@ -508,6 +510,8 @@ Da lì in poi, i task costosi mostrano una schermata di preflight; quelli econom
   //                 degli ABBONAMENTI Pro/Max usati via Claude Code (l'OAuth della
   //                 tua sessione passa così). Mettilo solo per le API a chiave.
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
+  //   authStyle     "x-api-key" (default) o "bearer": come inviare la chiave. Gli endpoint
+  //                 Anthropic-compatible di terze parti (DeepSeek/z.ai) vogliono "bearer".
   //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
   //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
   //   modes         ["single_pass"] e/o ["agentic"]: modalità consentite. Assente =

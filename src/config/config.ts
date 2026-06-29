@@ -92,7 +92,12 @@ const isHttpUrl = (x: string): boolean => {
  * malformata è un errore esplicito, non un default silenzioso.
  */
 function toRouting(name: string, def: Record<string, unknown>): Result<ModelRouting> {
-  const out: { baseUrl?: string; apiKeyEnv?: string; upstreamModel?: string } = {};
+  const out: {
+    baseUrl?: string;
+    apiKeyEnv?: string;
+    upstreamModel?: string;
+    authStyle?: "x-api-key" | "bearer";
+  } = {};
   if (def.baseUrl !== undefined && def.baseUrl !== null) {
     if (typeof def.baseUrl !== "string" || !isHttpUrl(def.baseUrl)) {
       return err(`modello "${name}": "baseUrl" deve essere un URL http(s) valido`);
@@ -110,6 +115,12 @@ function toRouting(name: string, def: Record<string, unknown>): Result<ModelRout
       return err(`modello "${name}": "upstreamModel" deve essere una stringa non vuota`);
     }
     out.upstreamModel = def.upstreamModel;
+  }
+  if (def.authStyle !== undefined && def.authStyle !== null) {
+    if (def.authStyle !== "x-api-key" && def.authStyle !== "bearer") {
+      return err(`modello "${name}": "authStyle" deve essere "x-api-key" o "bearer"`);
+    }
+    out.authStyle = def.authStyle;
   }
   return ok(out);
 }
@@ -258,6 +269,8 @@ export const DEFAULT_CONFIG_JSONC = `{
   //                 ABBONAMENTI Pro/Max usati via Claude Code (l'OAuth della tua
   //                 sessione passa così com'è). Mettilo solo per le API a chiave.
   //   upstreamModel id del modello da mandare al provider (assente → quello della richiesta)
+  //   authStyle     "x-api-key" (default) o "bearer": come inviare la chiave. Gli endpoint
+  //                 Anthropic-compatible di terze parti (DeepSeek/z.ai) vogliono "bearer".
   //   roles         ["review"] e/o ["write"]: con policy.roleRouting "strict" dedica
   //                 il modello a quel tipo di task. Assente = jolly (qualsiasi ruolo).
   //   modes         ["single_pass"] e/o ["agentic"]: modalità consentite. Assente =

@@ -63,15 +63,17 @@ const DROP_HEADERS: ReadonlySet<string> = new Set([
 
 /**
  * Costruisce gli header per la chiamata upstream a partire da quelli in ingresso.
- * Pura. Rimuove gli header hop-by-hop e gestisce l'auth: se `apiKey` è fornita, la
- * imposta come `x-api-key` e rimuove l'`authorization` in ingresso; altrimenti
- * lascia passare gli header di auth originali. NON forza `content-type`: lo fa il
- * percorso routed dove il body è riserializzato in JSON (il passthrough preserva
- * il content-type originale, così una GET senza body non ne acquista uno, R3).
+ * Pura. Rimuove gli header hop-by-hop e gestisce l'auth: se `apiKey` è fornita la
+ * imposta secondo `authStyle` (`x-api-key` di default, stile Anthropic; oppure
+ * `Authorization: Bearer` per gli endpoint di terze parti) rimuovendo l'altro header
+ * di auth in ingresso; se `apiKey` è null lascia passare gli header di auth originali.
+ * NON forza `content-type`: lo fa il percorso routed dove il body è riserializzato
+ * in JSON (il passthrough preserva il content-type originale, R3).
  */
 export function buildForwardHeaders(
   incoming: Record<string, string | string[] | undefined>,
   apiKey: string | null,
+  authStyle: "x-api-key" | "bearer" = "x-api-key",
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(incoming)) {
@@ -80,8 +82,13 @@ export function buildForwardHeaders(
     out[key] = Array.isArray(v) ? v.join(", ") : v;
   }
   if (apiKey !== null) {
-    out["x-api-key"] = apiKey;
-    delete out["authorization"];
+    if (authStyle === "bearer") {
+      out["authorization"] = `Bearer ${apiKey}`;
+      delete out["x-api-key"];
+    } else {
+      out["x-api-key"] = apiKey;
+      delete out["authorization"];
+    }
   }
   return out;
 }
