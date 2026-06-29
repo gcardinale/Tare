@@ -284,7 +284,12 @@ async function handle(
   const headers = buildForwardHeaders(req.headers, keyR.value);
   headers["content-type"] = "application/json"; // body riserializzato in JSON
   const fwdBody = JSON.stringify(withUpstreamModel(body, chosen));
-  const url = new URL("/v1/messages", resolveUpstreamBase(chosen, r.fallbackBaseUrl)).toString();
+  // Ricostruisce l'URL upstream da `req.url`, così path E query (se presenti)
+  // della richiesta originale sono preservati verso il provider.
+  const url = new URL(
+    req.url ?? "/v1/messages",
+    resolveUpstreamBase(chosen, r.fallbackBaseUrl),
+  ).toString();
 
   let upstream: Response;
   try {
