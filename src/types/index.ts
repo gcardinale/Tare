@@ -74,6 +74,14 @@ export interface Usage {
   readonly costCurrency?: number;
 }
 
+/**
+ * Stato di budget di tutti i modelli noti: è il contenuto di `~/.tare/ledger.json`.
+ * Mappa nome-modello → stato nella sua economia. Vedi README §4 (Ledger).
+ */
+export interface Ledger {
+  readonly models: Readonly<Record<string, BudgetState>>;
+}
+
 // ─── Modelli ─────────────────────────────────────────────────────────────────
 
 export type Period = "weekly" | "monthly";
