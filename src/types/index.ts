@@ -153,4 +153,9 @@ export interface RouteDecision extends RouteCandidate {
   readonly suggestion: string;
   /** Alternative scartate ma valide, in ordine di preferenza. */
   readonly alternatives: readonly RouteCandidate[];
+  /**
+   * `true` se il task è abbastanza economico da poter saltare il preflight
+   * (vedi `Policy.autoPassCostBelow`). Il consumer decide se prompttare o no.
+   */
+  readonly autoPass: boolean;
 }
