@@ -15,6 +15,18 @@ describe("extractClassifyInput — task valido", () => {
     if (r.ok) expect(r.value.task).toBe("trova il bug nel checkout");
   });
 
+  it("loop agentico: ultimo user è un tool_result senza testo → usa il task precedente", () => {
+    const r = extractClassifyInput({
+      messages: [
+        { role: "user", content: "implementa la cache" },
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "bash", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "output" }] },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.task).toBe("implementa la cache");
+  });
+
   it("concatena i blocchi testuali dell'ultimo user, ignorando i non-testuali", () => {
     const r = extractClassifyInput({
       messages: [
@@ -101,18 +113,18 @@ describe("extractClassifyInput — errori", () => {
     expect(extractClassifyInput({}).ok).toBe(false);
   });
 
-  it("nessun messaggio user → err", () => {
-    expect(extractClassifyInput({ messages: [{ role: "assistant", content: "solo io" }] }).ok).toBe(
-      false,
-    );
-  });
+  it("messages vuoto o senza user con testo → ok con task vuoto (si instrada lo stesso)", () => {
+    // Un budget-keeper non deve perdere richieste: niente err, task "".
+    const noUser = extractClassifyInput({ messages: [{ role: "assistant", content: "solo io" }] });
+    expect(noUser.ok).toBe(true);
+    if (noUser.ok) expect(noUser.value.task).toBe("");
 
-  it("ultimo user senza testo → err", () => {
-    expect(
-      extractClassifyInput({
-        messages: [{ role: "user", content: [{ type: "image", source: {} }] }],
-      }).ok,
-    ).toBe(false);
-    expect(extractClassifyInput({ messages: [{ role: "user", content: "   " }] }).ok).toBe(false);
+    const onlyToolResult = extractClassifyInput({
+      messages: [{ role: "user", content: [{ type: "image", source: {} }] }],
+    });
+    expect(onlyToolResult.ok).toBe(true);
+    if (onlyToolResult.ok) expect(onlyToolResult.value.task).toBe("");
+
+    expect(extractClassifyInput({ messages: [] }).ok).toBe(true);
   });
 });

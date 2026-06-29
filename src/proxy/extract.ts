@@ -62,8 +62,10 @@ function toolNames(tools: unknown): string[] {
 
 /**
  * Costruisce un `ClassifyInput` dal corpo di una richiesta Messages. Puro.
- * `Result.err` se il body non è un oggetto, `messages` non è un array, o non
- * c'è un turno `user` con testo (senza task non c'è nulla da classificare).
+ * `Result.err` solo se il body non è un oggetto o `messages` non è un array
+ * (richiesta malformata). Se nessun turno user ha testo (es. continuazione di
+ * un loop con solo `tool_result`) il task resta vuoto ma la richiesta è valida:
+ * va instradata e contabilizzata comunque.
  */
 export function extractClassifyInput(body: unknown): Result<ClassifyInput> {
   if (!isPlainObject(body)) return err(`richiesta non valida: corpo non è un oggetto`);
@@ -71,25 +73,31 @@ export function extractClassifyInput(body: unknown): Result<ClassifyInput> {
     return err(`richiesta non valida: "messages" deve essere un array`);
   }
 
-  // L'ultimo turno user è il task; deve avere testo.
-  let lastUser = -1;
+  // Task = ULTIMO turno user CON testo (cercato all'indietro). Nei loop agentici
+  // l'ultimo messaggio è spesso un `tool_result` senza testo: l'istruzione
+  // originale è più indietro nello stesso array (Claude Code reinvia l'intera
+  // conversazione a ogni passo). Cercandola così instradiamo e CONTABILIZZIAMO
+  // ogni richiesta del loop, invece di lasciarne sfuggire i token in passthrough.
+  let taskIdx = -1;
+  let task = "";
   for (let i = body.messages.length - 1; i >= 0; i -= 1) {
     const msg = body.messages[i];
     if (isPlainObject(msg) && msg.role === "user") {
-      lastUser = i;
-      break;
+      const text = textOf(msg.content).trim();
+      if (text !== "") {
+        taskIdx = i;
+        task = text;
+        break;
+      }
     }
   }
-  if (lastUser === -1) return err(`richiesta non valida: nessun messaggio "user"`);
+  // Nessun testo in alcun turno user (raro): task resta "" — classificazione
+  // neutra, ma si instrada lo stesso. Un budget-keeper non deve perdere richieste.
 
-  const lastUserMsg = body.messages[lastUser] as Record<string, unknown>;
-  const task = textOf(lastUserMsg.content).trim();
-  if (task === "") return err(`richiesta non valida: l'ultimo messaggio "user" non ha testo`);
-
-  // Contesto = system + ogni altro messaggio (escluso il task), stimato in token.
+  // Contesto = system + ogni altro messaggio (escluso il messaggio-task).
   let contextChars = systemText(body.system).length;
   for (let i = 0; i < body.messages.length; i += 1) {
-    if (i === lastUser) continue;
+    if (i === taskIdx) continue;
     const msg = body.messages[i];
     if (isPlainObject(msg)) contextChars += textOf(msg.content).length;
   }
