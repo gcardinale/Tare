@@ -5,7 +5,7 @@
  * Comandi reali su config + ledger:
  *   tare init     scrive ~/.tare/config.jsonc (template)
  *   tare status   mostra l'headroom residuo per modello
- * `tare up` (proxy interceptor) arriva in M4. La cartella di stato è `~/.tare`,
+ * `tare up` avvia il proxy interceptor. La cartella di stato è `~/.tare`,
  * sovrascrivibile con `TARE_DIR`. Questo file è I/O ai bordi: nessuna logica
  * pura qui (vive nei moduli config/ledger/orchestrator, già testati).
  */
@@ -55,7 +55,7 @@ Opzioni:
 Suggerimento: puoi anche forzare una SINGOLA richiesta scrivendo nel prompt un tag
 [model:nome] (es. "[model:claude] fai questo"). Ha priorità sul forzamento globale.
 
-Stato: pre-alpha. Cartella di stato: ~/.tare (override: TARE_DIR).`);
+Cartella di stato: ~/.tare (override: TARE_DIR).`);
 }
 
 /** `tare init` — scrive il template di config e inizializza il ledger se assente. */
@@ -190,6 +190,19 @@ async function cmdUp(argv: readonly string[]): Promise<number> {
   console.log(`tare: proxy in ascolto su ${url}`);
   console.log(`Punta il tuo agente:  export ANTHROPIC_BASE_URL=${url}`);
   console.log(`Modelli: ${cfg.value.models.map((m) => m.name).join(", ")}. Ctrl-C per fermare.`);
+
+  // Il preflight è in-band: la scheda col prezzo appare NEL terminale dell'agente,
+  // non qui. Un promemoria di cosa aspettarsi e come rispondere.
+  const mode = cfg.value.policy.preflight ?? "auto";
+  if (mode === "off") {
+    console.log(`Preflight: off — instrada senza chiedere (mostra solo un log).`);
+  } else {
+    const when = mode === "always" ? "ogni task" : "i task non economici";
+    console.log(
+      `Preflight: ${mode} — per ${when} l'agente riceve una scheda col prezzo; ` +
+        `rispondi nel suo terminale con  ok · ok:<modello> · no.`,
+    );
+  }
 
   // Resta vivo: il server tiene aperto l'event loop, non risolviamo l'exit code.
   return new Promise<number>(() => {});

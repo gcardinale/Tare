@@ -199,6 +199,13 @@ export interface Policy {
    * (jolly come ripiego); `"off"` (default, se assente) ignora i ruoli.
    */
   readonly roleRouting?: "strict" | "off";
+  /**
+   * Il cancello di preflight: cosa fare PRIMA di spendere.
+   *  - `"auto"` (default) chiede conferma solo se il task non è auto-pass;
+   *  - `"always"` chiede conferma per ogni task, anche economico;
+   *  - `"off"` non chiede mai: instrada e basta (il preflight resta solo un log).
+   */
+  readonly preflight?: "auto" | "always" | "off";
 }
 
 /** Una candidatura: modello + modalità + stima. */

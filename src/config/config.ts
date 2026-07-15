@@ -198,6 +198,7 @@ function toPolicy(x: unknown): Result<Policy> {
     opusMinHeadroomPct: number;
     preferCappedOverMetered: boolean;
     roleRouting?: "strict" | "off";
+    preflight?: "auto" | "always" | "off";
     autoPassCostBelow?: { meteredUsd?: number };
   } = {
     singlePassBelowTokens: x.singlePassBelowTokens,
@@ -211,6 +212,14 @@ function toPolicy(x: unknown): Result<Policy> {
       return err(`"policy.roleRouting" deve essere "strict" o "off"`);
     }
     base.roleRouting = x.roleRouting;
+  }
+
+  // `preflight` opzionale: assente/null = "auto" (cancello solo sui task non auto-pass).
+  if (x.preflight !== undefined && x.preflight !== null) {
+    if (x.preflight !== "auto" && x.preflight !== "always" && x.preflight !== "off") {
+      return err(`"policy.preflight" deve essere "auto", "always" o "off"`);
+    }
+    base.preflight = x.preflight;
   }
 
   // `null` (comune in JSON per "nessun valore") è trattato come assente (audit B7).
@@ -314,6 +323,11 @@ export const DEFAULT_CONFIG_JSONC = `{
     // "strict" forza review→modelli-review e write→modelli-write (jolly come ripiego).
     // "off" (o assente) ignora i ruoli.
     "roleRouting": "strict",
+    // Il cancello di preflight, PRIMA di spendere: "auto" (default) chiede conferma
+    // solo sui task non auto-pass e ti mostra la scheda col prezzo nel terminale
+    // dell'agente (rispondi ok / ok:<modello> / no); "always" chiede sempre;
+    // "off" non chiede mai (instrada e basta).
+    "preflight": "auto",
     "autoPassCostBelow": { "meteredUsd": 0.01 }
   }
 }

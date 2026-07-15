@@ -42,6 +42,15 @@ import {
   toUsage,
   withUpstreamModel,
 } from "./forward.js";
+import {
+  buildGateMessage,
+  buildGateSse,
+  formatPreflightCard,
+  GATE_REJECTED_TEXT,
+  isGateableTurn,
+  readGateReply,
+  stripGateTurns,
+} from "./gate.js";
 
 function isPlainObject(x: unknown): x is Record<string, unknown> {
   return x !== null && typeof x === "object" && !Array.isArray(x);
@@ -122,6 +131,30 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   const text = JSON.stringify(payload);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(text);
+}
+
+/**
+ * Chiude la richiesta con una risposta SINTETICA (la scheda di preflight o
+ * l'annullamento): il client la vede come un normale turno dell'assistente, ma
+ * NESSUNA chiamata è stata fatta a nessun provider e il ledger resta intatto.
+ * Rispetta la forma chiesta dal client (SSE se `stream: true`, altrimenti JSON).
+ */
+function sendGate(
+  res: ServerResponse,
+  text: string,
+  streaming: boolean,
+  clientModel: string | undefined,
+): void {
+  if (!streaming) {
+    sendJson(res, 200, buildGateMessage(text, clientModel));
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  res.end(buildGateSse(text, clientModel));
 }
 
 /** Header di risposta upstream da reinoltrare al client (saltando quelli da ricalcolare). */
@@ -292,22 +325,46 @@ async function handle(
     return;
   }
 
+  // Forma della risposta e model id del client: servono sia al cancello (scheda
+  // sintetica) sia all'inoltro. Vanno letti dal body ORIGINALE, prima di ripulirlo.
+  const streaming = isStreamingRequest(body);
+  const clientModel =
+    isPlainObject(body) && typeof body.model === "string" ? body.model : undefined;
+
+  // ── Cancello di preflight IN-BAND ─────────────────────────────────────────
+  // La risposta dell'utente (`ok`/`no`) va letta sul body ORIGINALE, dove scheda
+  // e risposta sono ancora adiacenti. Un `no` chiude subito, a costo zero.
+  const gateReply = readGateReply(body);
+  if (gateReply.kind === "rejected") {
+    r.log(`[tare] preflight rifiutato dall'utente → nessuna run`);
+    sendGate(res, GATE_REJECTED_TEXT, streaming, clientModel);
+    return;
+  }
+  const approved = gateReply.kind === "approved";
+  // Da qui in poi si lavora sul body RIPULITO: l'upstream non deve mai vedere le
+  // nostre schede né i turni `ok`/`no`, e la classificazione dev'essere sul task
+  // vero (non su un "ok"). Vale anche per i fallback in passthrough.
+  const cleanBody = stripGateTurns(body);
+  const cleanRaw = JSON.stringify(cleanBody);
+
   // ── Routing enforcing (stream e non-stream allo stesso modo) ──────────────
   const fallbackTo = (why: string): Promise<void> => {
     r.log(`[tare] ${why} → passthrough`);
-    return passthrough(req, res, fetchImpl, r.fallbackBaseUrl, raw, r.log);
+    return passthrough(req, res, fetchImpl, r.fallbackBaseUrl, cleanRaw, r.log);
   };
 
-  const input = extractClassifyInput(body);
+  const input = extractClassifyInput(cleanBody);
   if (!input.ok) return fallbackTo(`task non estraibile: ${input.error}`);
 
   const cfg = await loadConfig();
   if (!cfg.ok) return fallbackTo(`config non caricata: ${cfg.error}`);
 
-  // Override forzato: tag `[model:nome]` nel prompt (per richiesta) o pin persistente
-  // (`tare use <nome>`). Bypassa budget/modalità/ruolo: "usa questo, punto". Se il
-  // nome non è in config, si ignora e si torna al routing automatico.
-  const forcedName = parseForcedModel(input.value.task) ?? (await readPin());
+  // Override forzato: alternativa scelta al cancello (`ok:<nome>`), poi tag
+  // `[model:nome]` nel prompt, poi pin persistente (`tare use <nome>`). Bypassa
+  // budget/modalità/ruolo — e il cancello: "usa questo, punto". Se il nome non è
+  // in config, si ignora e si torna al routing automatico.
+  const forcedName =
+    (approved ? gateReply.model : null) ?? parseForcedModel(input.value.task) ?? (await readPin());
   let chosen =
     forcedName !== null ? cfg.value.models.find((m) => m.name === forcedName) : undefined;
   if (forcedName !== null && chosen === undefined) {
@@ -324,6 +381,21 @@ async function handle(
     if (!planned.ok) return fallbackTo(`nessun modello idoneo: ${planned.error}`);
     chosen = cfg.value.models.find((m) => m.name === planned.value.decision.model);
     if (chosen === undefined) return fallbackTo(`modello scelto assente dalla config`);
+
+    // Cancello: se il preflight è attivo, questo è un nuovo turno-istruzione e il
+    // task non è già approvato, si mostra la scheda al posto della run. Con
+    // "always" si chiede anche sui task auto-pass; con "auto" solo sui non auto-pass.
+    const preflightMode = cfg.value.policy.preflight ?? "auto";
+    const gate =
+      preflightMode !== "off" &&
+      !approved &&
+      isGateableTurn(cleanBody) &&
+      (preflightMode === "always" || !planned.value.decision.autoPass);
+    if (gate) {
+      r.log(`[tare] preflight → scheda mostrata (${planned.value.decision.suggestion})`);
+      sendGate(res, formatPreflightCard(planned.value, cfg.value.models), streaming, clientModel);
+      return;
+    }
     r.log(formatPreflight(planned.value));
   }
 
@@ -333,7 +405,7 @@ async function handle(
   const headers = buildForwardHeaders(req.headers, keyR.value, chosen.authStyle);
   headers["content-type"] = "application/json"; // body riserializzato in JSON
   // Sostituisce il model e ripulisce i thinking block di altri provider dalla cronologia.
-  const fwdBody = JSON.stringify(stripThinkingBlocks(withUpstreamModel(body, chosen)));
+  const fwdBody = JSON.stringify(stripThinkingBlocks(withUpstreamModel(cleanBody, chosen)));
   // Append del path della richiesta al baseUrl (preserva eventuali prefissi come
   // `/api/anthropic` e la query): vedi joinUpstreamUrl.
   const url = joinUpstreamUrl(
@@ -349,12 +421,9 @@ async function handle(
     return;
   }
 
-  // Model id richiesto dal client: va rimesso nella risposta (trasparenza), così
-  // Claude Code rivede il proprio modello e non lo considera "non accessibile".
-  const clientModel =
-    isPlainObject(body) && typeof body.model === "string" ? body.model : undefined;
-
-  if (isStreamingRequest(body)) {
+  // `clientModel` (per la trasparenza del model id) e `streaming` sono già stati
+  // letti dal body originale in cima a `handle`.
+  if (streaming) {
     await relayStreamAndRecord(res, upstream, chosen, clientModel, r.log);
     return;
   }

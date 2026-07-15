@@ -6,7 +6,7 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { startProxy } from "../src/proxy/index.js";
+import { startProxy, GATE_MARKER } from "../src/proxy/index.js";
 import { parseConfig } from "../src/config/index.js";
 import { emptyLedger, syncLedger, saveLedger, loadLedger } from "../src/ledger/index.js";
 
@@ -227,5 +227,104 @@ describe("proxy e2e — routing enforcing (non-stream)", () => {
     const json = (await resp.json()) as { ok: boolean; path: string };
     expect(json.ok).toBe(true);
     expect(captured.url).toBe("/v1/models");
+  });
+});
+
+describe("proxy e2e — cancello di preflight in-band", () => {
+  const headers = { "content-type": "application/json", "x-api-key": "client-key" };
+  const gateableTask = {
+    model: "alias",
+    max_tokens: 4096,
+    tools: [{ name: "bash" }],
+  };
+  const cardTurn = { role: "assistant", content: `${GATE_MARKER}\n  → pay ...` };
+
+  it("un task gateable non-autopass riceve la SCHEDA senza toccare upstream né ledger", async () => {
+    const spentBefore = await paySpent();
+    const resp = await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...gateableTask,
+        messages: [{ role: "user", content: "refactor tutto il modulo auth" }],
+      }),
+    });
+    expect(resp.status).toBe(200);
+    const json = (await resp.json()) as {
+      content: { text: string }[];
+      usage: { input_tokens: number; output_tokens: number };
+    };
+    expect(json.content[0]!.text).toContain(GATE_MARKER);
+    expect(json.usage).toEqual({ input_tokens: 0, output_tokens: 0 });
+    // Nessuna chiamata a un provider → il ledger resta identico.
+    expect(await paySpent()).toBe(spentBefore);
+  });
+
+  it("rispondendo ok la run parte: inoltra la cronologia RIPULITA e aggiorna il ledger", async () => {
+    const spentBefore = await paySpent();
+    const resp = await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...gateableTask,
+        messages: [
+          { role: "user", content: "refactor auth" },
+          cardTurn,
+          { role: "user", content: "ok" },
+        ],
+      }),
+    });
+    expect(resp.status).toBe(200);
+    const json = (await resp.json()) as { model: string };
+    expect(json.model).toBe("alias"); // trasparenza del model id
+
+    // L'upstream ha visto SOLO il task: scheda e "ok" sono stati rimossi.
+    const sent = JSON.parse(captured.body) as { messages: unknown[] };
+    expect(sent.messages).toEqual([{ role: "user", content: "refactor auth" }]);
+
+    // Costo reale registrato: 12/1e6*3 + 8/1e6*15.
+    const expected = spentBefore + (12 / 1e6) * PRICE_IN + (8 / 1e6) * PRICE_OUT;
+    expect(await paySpent()).toBeCloseTo(expected, 9);
+  });
+
+  it("rispondendo no la run è annullata: nessun upstream, nessun costo", async () => {
+    const spentBefore = await paySpent();
+    const marker = captured.body; // sentinella: se l'upstream è chiamato, cambia
+    const resp = await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...gateableTask,
+        messages: [
+          { role: "user", content: "refactor auth" },
+          cardTurn,
+          { role: "user", content: "no" },
+        ],
+      }),
+    });
+    expect(resp.status).toBe(200);
+    const json = (await resp.json()) as { content: { text: string }[] };
+    expect(json.content[0]!.text).toContain("Annullato");
+    expect(captured.body).toBe(marker); // upstream mai chiamato
+    expect(await paySpent()).toBe(spentBefore);
+  });
+
+  it("streaming: la scheda arriva come SSE sintetico (usage a zero, upstream intatto)", async () => {
+    const marker = captured.body;
+    const resp = await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...gateableTask,
+        stream: true,
+        messages: [{ role: "user", content: "un altro refactor grosso" }],
+      }),
+    });
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toContain("text/event-stream");
+    const text = await resp.text();
+    expect(text).toContain("event: message_start");
+    expect(text).toContain(GATE_MARKER);
+    expect(captured.body).toBe(marker); // nessun inoltro upstream
   });
 });
